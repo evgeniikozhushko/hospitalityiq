@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "ingest": "node --env-file=.env.local --import tsx scripts/ingest.ts",
+    "search": "node --env-file=.env.local --import tsx scripts/search.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@qdrant/js-client-rest": "^1.20.0",

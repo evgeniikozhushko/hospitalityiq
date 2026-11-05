@@ -1,0 +1,80 @@
+[
+  {
+    "_note": "TEST FIXTURE ONLY. Fictional properties and reviews shaped like Google Business Profile API output. Replace with real API data once access is approved.",
+    "locationId": "sample-lodge-a",
+    "propertyName": "Sample Mountain Lodge",
+    "propertyType": "hotel",
+    "reviews": [
+      {
+        "reviewId": "fixture-001",
+        "reviewer": { "displayName": "Jane Fixture" },
+        "starRating": "FIVE",
+        "comment": "Stunning mountain views from our room and the hot tub after skiing was perfect. Front desk staff were warm and quick at check-in.",
+        "createTime": "2026-01-14T18:22:00Z"
+      },
+      {
+        "reviewId": "fixture-002",
+        "reviewer": { "displayName": "Test Guest" },
+        "starRating": "TWO",
+        "comment": "Room was cold all night in January and the heater rattled. Waited 40 minutes at check-in. Email me at test.guest@example.com, confirmation #BK48213977.",
+        "createTime": "2026-01-29T03:10:00Z",
+        "reviewReply": { "comment": "We're sorry about the heating issue. Our maintenance team has since replaced the units on that floor." }
+      },
+      {
+        "reviewId": "fixture-003",
+        "reviewer": { "displayName": "Family Fixture" },
+        "starRating": "FOUR",
+        "comment": "Great for families. Kids loved the pool. Parking was tight and expensive though. Call me on (403) 555-0123 if you want details.",
+        "createTime": "2026-07-08T15:45:00Z"
+      },
+      {
+        "reviewId": "fixture-004",
+        "reviewer": { "displayName": "Rating Only" },
+        "starRating": "FIVE",
+        "createTime": "2026-08-02T12:00:00Z"
+      }
+    ]
+  },
+  {
+    "locationId": "sample-bistro-b",
+    "propertyName": "Sample Alpine Bistro",
+    "propertyType": "restaurant",
+    "reviews": [
+      {
+        "reviewId": "fixture-101",
+        "reviewer": { "displayName": "Foodie Fixture" },
+        "starRating": "FIVE",
+        "comment": "The bison short rib was the best meal of our trip. Cozy fireplace and attentive service. Book ahead on weekends.",
+        "createTime": "2026-02-11T02:30:00Z"
+      },
+      {
+        "reviewId": "fixture-102",
+        "reviewer": { "displayName": "Couple Fixture" },
+        "starRating": "THREE",
+        "comment": "Food was good but slow on a busy Saturday. We waited an hour for mains. Reservation code RES-77812 for reference.",
+        "createTime": "2026-03-21T04:05:00Z"
+      }
+    ]
+  },
+  {
+    "locationId": "sample-spa-c",
+    "propertyName": "Sample Hot Springs Spa",
+    "propertyType": "spa",
+    "reviews": [
+      {
+        "reviewId": "fixture-201",
+        "reviewer": { "displayName": "Relax Fixture" },
+        "starRating": "FIVE",
+        "comment": "Massage was excellent and the quiet room overlooking the valley was a highlight. Clean and calm.",
+        "createTime": "2026-05-16T20:00:00Z"
+      },
+      {
+        "reviewId": "fixture-202",
+        "reviewer": { "displayName": "Picky Fixture" },
+        "starRating": "TWO",
+        "comment": "Change rooms were not clean and there were not enough lockers on a Sunday afternoon.",
+        "createTime": "2026-10-04T22:15:00Z"
+      }
+    ]
+  }
+]
