@@ -4,6 +4,8 @@ import { z } from "zod";
 // startup instead of deep inside an API call.
 const EnvSchema = z.object({
   OPENAI_API_KEY: z.string().min(1, "OPENAI_API_KEY is missing"),
+  // Optional: route through an OpenAI-compatible proxy (e.g. LiteLLM).
+  OPENAI_BASE_URL: z.string().url().optional(),
   OPENAI_EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),
   QDRANT_URL: z.string().default("http://localhost:6333"),
   QDRANT_API_KEY: z.string().optional(),
