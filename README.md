@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HospitalityIQ
 
-## Getting Started
+An internal AI assistant for Banff Caribou Properties that turns guest reviews and campaign history into answers marketers can act on. Every answer shows its sources.
 
-First, run the development server:
+Built as the final project for the Parsity AI Engineering Program, followed by a 12-week pilot with the marketing team.
+
+> **Full scope, architecture, data-protection decisions, evals and decision log:** [`docs/project-scope.md`](docs/project-scope.md)
+
+## What it does
+
+- **Voice of the Guest:** reviews grouped into themes (housekeeping, front desk, food, spa, parking, value…) and tracked over time by property and outlet.
+- **Campaign Memory:** ask what worked, what didn't, and why across past campaigns.
+- **Campaign brief drafts** (after the pilot): a new brief from guest themes and past wins, every point cited.
+
+See [section 3 of the project scope](docs/project-scope.md#3-capabilities) for the main user flow and example questions.
+
+## Architecture (summary)
+
+- **Ingest path:** sources (Google reviews, CSV exports, campaign records) → light sanitizing → OpenAI theme tagging validated by Zod → Postgres (records, tags) + Qdrant (embeddings).
+- **Question path:** a router picks SQL on Postgres for counts and trends, or hybrid search on Qdrant for "what did guests say". Answers are written with a citation for every claim and streamed to the chat. LangSmith traces each step.
+
+Details: [section 5 of the project scope](docs/project-scope.md#5-architecture).
+
+## Tech stack
+
+Next.js, TypeScript, OpenAI API, Qdrant, Postgres, Zod, LangSmith. See [section 7](docs/project-scope.md#7-tech-stack).
+
+## Getting started
+
+Prerequisites: Node.js, npm, Docker (for local Qdrant), and an OpenAI API key.
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to see the app.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Check `lib/env.ts` for the environment variables the app expects.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Project layout
 
-## Learn More
+| Path | Purpose |
+|---|---|
+| `lib/schema.ts` | Zod schemas for Google Business Profile reviews and the stored review record |
+| `lib/sanitize.ts` | Lightweight regex sanitizer (emails, phones, booking refs, card-like numbers) |
+| `lib/qdrant.ts`, `lib/openai.ts`, `lib/env.ts` | Clients and config |
+| `scripts/ingest.ts` | Load → validate → sanitize → embed → upsert |
+| `scripts/search.ts` | Dense-only retrieval from the terminal |
+| `data/sample-reviews.json` | Fictional test fixture shaped like the Google API output |
+| `evals/test-questions.md` | Draft test questions for evals |
+| `docs/project-scope.md` | Living scope and decisions document |
+| `docs/gbp-api-access.md` | Google Business Profile API access checklist |
 
-To learn more about Next.js, take a look at the following resources:
+## Status
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Dense-only retrieval works from the terminal. Next up: answer generation with citations, theme taxonomy, Postgres data model, and hybrid (dense + sparse) search. The full status and roadmap are in [section 12 of the project scope](docs/project-scope.md#12-current-build-status).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Data protection
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Reviewer identity is not stored, and campaign financials stay behind role-based access in Postgres, never in the vector store. See [section 6](docs/project-scope.md#6-data-protection-updated).

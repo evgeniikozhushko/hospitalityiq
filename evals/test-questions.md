@@ -18,6 +18,7 @@ Financial documents are out of scope; the system must decline those.
 ## Must decline / say not found
 9. What was last quarter's revenue at [property]? (expected: decline, no financial data)
 10. What do guests say about a property we have no reviews for? (expected: say no data)
+11. Which winter promotion drove the most direct bookings? (expected: campaign intent, "not available yet". This is a missing feature, not a correct refusal)
 
 ## TODO
 - Expand to ~20 questions

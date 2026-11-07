@@ -41,6 +41,7 @@ async function main() {
           propertyName: loc.propertyName,
           propertyType: loc.propertyType,
           rating,
+          month: new Date(r.createTime).getUTCMonth() + 1,
           text,
           ownerReply: r.reviewReply?.comment
             ? sanitize(r.reviewReply.comment)

@@ -61,6 +61,8 @@ export const ReviewRecordSchema = z.object({
   propertyName: z.string(),
   propertyType: PropertyType,
   rating: z.number().int().min(1).max(5),
+  // Month the review was written (1-12, UTC). Lets "winter" filter across years.
+  month: z.number().int().min(1).max(12),
   text: z.string().min(1),
   ownerReply: z.string().optional(),
   createdAt: z.string(),
@@ -79,3 +81,77 @@ const RATING_TO_NUMBER: Record<string, number> = {
 export function ratingToNumber(r: z.infer<typeof StarRating>): number | null {
   return RATING_TO_NUMBER[r] ?? null;
 }
+
+// ---------------------------------------------------------------------------
+// Question answering
+// ---------------------------------------------------------------------------
+
+/**
+ * What the planner extracts from a question. Every filter is nullable rather
+ * than optional because OpenAI strict structured output requires all keys.
+ */
+export const QueryIntent = z.enum([
+  "review_insight", // what guests say: answered from reviews
+  "campaign", // promotions, bookings, conversions: not built yet
+  "financial", // revenue, spend, pricing: restricted, always declined here
+  "off_topic", // anything else
+]);
+export type QueryIntent = z.infer<typeof QueryIntent>;
+
+export const QueryFiltersSchema = z.object({
+  propertyTypes: z.array(PropertyType).nullable(),
+  propertyNames: z.array(z.string()).nullable(),
+  minRating: z.number().int().min(1).max(5).nullable(),
+  maxRating: z.number().int().min(1).max(5).nullable(),
+  months: z.array(z.number().int().min(1).max(12)).nullable(),
+  since: z.string().nullable().describe("ISO date (YYYY-MM-DD), inclusive"),
+  until: z.string().nullable().describe("ISO date (YYYY-MM-DD), inclusive"),
+});
+export type QueryFilters = z.infer<typeof QueryFiltersSchema>;
+
+export const QueryPlanSchema = z.object({
+  intent: QueryIntent,
+  mode: z
+    .enum(["specific", "aggregate"])
+    .describe("aggregate = comparing or ranking properties / counting mentions"),
+  searchQuery: z
+    .string()
+    .describe("The question rewritten for semantic search, without filter words"),
+  filters: QueryFiltersSchema,
+});
+export type QueryPlan = z.infer<typeof QueryPlanSchema>;
+
+export const EMPTY_FILTERS: QueryFilters = {
+  propertyTypes: null,
+  propertyNames: null,
+  minRating: null,
+  maxRating: null,
+  months: null,
+  since: null,
+  until: null,
+};
+
+/** A retrieved review as shown to the answer model and returned to the client. */
+export type Source = {
+  n: number; // citation number, [n] in the answer
+  reviewId: string;
+  propertyName: string;
+  propertyType: z.infer<typeof PropertyType>;
+  rating: number;
+  createdAt: string;
+  text: string;
+  score: number;
+};
+
+/** Fixed messages per non-answerable intent, so evals can tell them apart. */
+export const DECLINE_MESSAGES: Record<Exclude<QueryIntent, "review_insight">, string> = {
+  campaign:
+    "Campaign and booking performance isn't available yet. For now I can answer questions about what guests say in reviews.",
+  financial:
+    "I can't help with financial questions such as revenue, spend or pricing. I can answer questions about what guests say in reviews.",
+  off_topic:
+    "That's outside what I can help with. I answer questions about what guests say in reviews of our properties.",
+};
+
+export const NO_DATA_MESSAGE =
+  "I couldn't find any reviews matching that question. Try a different property, time period or wording.";

@@ -9,6 +9,7 @@
     "lint": "eslint",
     "ingest": "node --env-file=.env.local --import tsx scripts/ingest.ts",
     "search": "node --env-file=.env.local --import tsx scripts/search.ts",
+    "ask": "node --env-file=.env.local --import tsx scripts/ask.ts",
     "test": "vitest run"
   },
   "dependencies": {
