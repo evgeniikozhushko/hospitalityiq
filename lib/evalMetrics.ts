@@ -130,6 +130,34 @@ const norm = (s: string) =>
     .trim();
 
 /**
+ * Text between paired quote marks. Curly quotes open with “ and close with ”;
+ * a straight quote opens when none is open and closes otherwise. Pairing must
+ * happen before any length filtering: skipping a short quote ("warm") would
+ * shift every later pair and flag the prose between quotes as a quote.
+ * A stray unbalanced mark is ignored.
+ */
+function quotedSpans(text: string): string[] {
+  const spans: string[] = [];
+  let open = -1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "“") {
+      open = i + 1;
+    } else if (ch === "”") {
+      if (open >= 0) spans.push(text.slice(open, i));
+      open = -1;
+    } else if (ch === '"') {
+      if (open < 0) open = i + 1;
+      else {
+        spans.push(text.slice(open, i));
+        open = -1;
+      }
+    }
+  }
+  return spans;
+}
+
+/**
  * Quoted strings in the answer that do not appear verbatim in any retrieved
  * review. The prompt asks for exact guest wording, so a miss is a fabricated quote.
  */
@@ -141,13 +169,16 @@ export function unmatchedQuotes(
   const hay = sourceTexts.map(norm);
   // Markdown emphasis inside quote marks is formatting, not guest wording.
   const plain = answer.replace(/[*_]/g, "");
-  const quotes = [...plain.matchAll(/["\u201C]([^"\u201C\u201D]{8,})["\u201D]/g)].flatMap((m) =>
-    // "a ... b" and "a [that] b" quote separate fragments; each must be verbatim on its own.
-    m[1]
-      .split(/\u2026|\.{3}|\[[^\]]*\]/)
-      .map((f) => norm(f).replace(/^[.,!?\s]+|[.,!?\s]+$/g, ""))
-      .filter((f) => f.length >= 5),
-  );
+  const quotes = quotedSpans(plain)
+    // Only longer quotes are worth verifying; short ones ("warm") are common words.
+    .filter((span) => span.length >= 8)
+    .flatMap((span) =>
+      // "a ... b" and "a [that] b" quote separate fragments; each must be verbatim on its own.
+      span
+        .split(/\u2026|\.{3}|\[[^\]]*\]/)
+        .map((f) => norm(f).replace(/^[.,!?\s]+|[.,!?\s]+$/g, ""))
+        .filter((f) => f.length >= 5),
+    );
   const asked = norm(question);
   // Echoing a phrase from the question ("most complaints") is not a guest quote.
   return quotes.filter((q) => !hay.some((h) => h.includes(q)) && !asked.includes(q));

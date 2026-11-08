@@ -112,6 +112,40 @@ describe("quotes, names, forbidden text", () => {
       unmatchedQuotes('The "most complaints" go to X [1]', texts, "Which property gets the most complaints?"),
     ).toEqual([]);
   });
+  describe("pairs opening and closing quote marks (short quotes must not shift the pairing)", () => {
+    const withWarm = [
+      ...texts,
+      "Front desk staff were warm and quick at check-in.",
+      "Massage was excellent and the quiet room overlooking the valley was a highlight.",
+    ];
+    // A later quote is what used to close the shifted pair and flag the prose in between.
+    const prose =
+      " front desk staff, and family-friendly amenities like the pool and hot tub [1][6]. Spa guests liked the ";
+    const tailStraight = '"quiet room overlooking the valley" [2].';
+    const tailCurly = "\u201Cquiet room overlooking the valley\u201D [2].";
+
+    it("does not flag the prose between a short and a long straight quote", () => {
+      expect(
+        unmatchedQuotes(`Guests praise the "stunning mountain views," "warm"${prose}${tailStraight}`, withWarm),
+      ).toEqual([]);
+    });
+    it("does not flag the prose between a short and a long curly quote", () => {
+      expect(
+        unmatchedQuotes(`Guests praise the “stunning mountain views,” “warm”${prose}`, withWarm),
+      ).toEqual([]);
+    });
+    it("still flags a long invented quote that follows a short one", () => {
+      expect(
+        unmatchedQuotes('"warm" front desk and "absolutely magical sunsets" [1]', withWarm),
+      ).toEqual(["absolutely magical sunsets"]);
+    });
+    it("verifies only quotes of 8+ characters, but a short one never consumes the next pair", () => {
+      expect(unmatchedQuotes('"warm" and "the hot tub" and "ok"', withWarm)).toEqual([]);
+    });
+    it("ignores a stray unbalanced quote mark", () => {
+      expect(unmatchedQuotes('Guests say "the hot tub" and a stray " mark', withWarm)).toEqual([]);
+    });
+  });
   it("flags invented quotes", () => {
     expect(unmatchedQuotes('They said "absolutely magical sunsets" [1]', texts)).toEqual([
       "absolutely magical sunsets",
