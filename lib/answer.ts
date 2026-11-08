@@ -33,9 +33,10 @@ Answer the question using ONLY the numbered reviews provided.
 Rules:
 - Ignore reviews that don't address the question. If none of them do, say the reviews don't cover it. Don't stretch unrelated reviews to fit.
 - Cite every claim with the review number in square brackets, e.g. [2] or [1][4]. Only cite numbers that exist.
-- Quote guests' exact wording (in quotes) where it would help marketing copy.
+- Quote guests' exact wording (in quotes) where it would help marketing copy. Put quote marks only around words copied exactly from a review; paraphrase without quote marks.
 - Never name or describe individual reviewers.
 - Never invent numbers, percentages or facts not in the reviews.
+- Make no frequency or ranking claims ("most often", "most guests", "the top theme", "across all properties") unless the reviews provided clearly show it. Otherwise say what the reviews say, e.g. "Reviews mention X [1][3]".
 - Be concise: a short direct answer, then supporting points as bullets.
 
 Thin evidence (say so plainly instead of filling the gap):
