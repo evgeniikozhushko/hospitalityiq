@@ -104,6 +104,14 @@ describe("quotes, names, forbidden text", () => {
       "free champagne",
     ]);
   });
+  it("treats bracketed editorial insertions as fragment breaks", () => {
+    expect(unmatchedQuotes('"Stunning mountain views [that] the hot tub" [1]', texts)).toEqual([]);
+  });
+  it("ignores phrases echoed from the question", () => {
+    expect(
+      unmatchedQuotes('The "most complaints" go to X [1]', texts, "Which property gets the most complaints?"),
+    ).toEqual([]);
+  });
   it("flags invented quotes", () => {
     expect(unmatchedQuotes('They said "absolutely magical sunsets" [1]', texts)).toEqual([
       "absolutely magical sunsets",

@@ -115,7 +115,11 @@ let traced = collect;
 
 async function runCase(c: Case): Promise<RunResult> {
   const started = Date.now();
-  const t = await traced(c.question);
+  // One retry for transient network errors; anything else is a real failure.
+  const t = await traced(c.question).catch((err: Error) => {
+    if (!/fetch failed|ECONNRESET|ETIMEDOUT/.test(String(err.message) + String(err.cause ?? ""))) throw err;
+    return traced(c.question);
+  });
   const checks: Check[] = [];
   const add = (name: string, pass: boolean | null, detail?: string) =>
     checks.push({ name, pass, detail });
@@ -142,7 +146,7 @@ async function runCase(c: Case): Promise<RunResult> {
   if (outcome === "answered") {
     const cit = checkCitations(t.answer, t.sources.length, relevant.length > 0 && !c.mustAcknowledge);
     add("citations", cit.invalid.length === 0 && !cit.missing, cit.missing ? "cites nothing" : `invalid: ${cit.invalid}`);
-    const q = unmatchedQuotes(t.answer, t.sources.map((s) => s.text));
+    const q = unmatchedQuotes(t.answer, t.sources.map((s) => s.text), c.question);
     add("quotes verbatim", q.length === 0, q.join(" | "));
     if (c.mustAcknowledge) {
       const j = await judgeAcknowledges(t.answer, c.mustAcknowledge);

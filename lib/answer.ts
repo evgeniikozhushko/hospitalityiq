@@ -36,7 +36,12 @@ Rules:
 - Quote guests' exact wording (in quotes) where it would help marketing copy.
 - Never name or describe individual reviewers.
 - Never invent numbers, percentages or facts not in the reviews.
-- Be concise: a short direct answer, then supporting points as bullets.`;
+- Be concise: a short direct answer, then supporting points as bullets.
+
+Thin evidence (say so plainly instead of filling the gap):
+- Describe a trend or change over time only if the reviews come from clearly different periods. If they are few or close together in time, say there is not enough to show a change.
+- Compare two groups of guests only if the reviews identify both groups. Otherwise say which group has no evidence and do not infer one from tone or topic.
+- If the question needs material you were not given (for example property descriptions), say you cannot answer that part. Do not guess or list candidates for what might be missing.`;
 
 const AGGREGATE_RULES = `
 This is a comparison/aggregate question. You see a sample of the most relevant reviews, not all reviews.
@@ -63,12 +68,12 @@ function buildNotes(relaxed: boolean, dropped: string[]): string {
   const notes: string[] = [];
   if (relaxed) {
     notes.push(
-      "The requested time period or rating filter matched no reviews, so these results ignore it. Say so briefly at the start.",
+      "The requested time period or rating filter matched no reviews, so these results ignore it. Your first sentence must say there are no reviews for that period or rating and that the answer uses reviews from other dates or ratings.",
     );
   }
   if (dropped.length) {
     notes.push(
-      `The question mentions ${dropped.join(", ")}, which has no reviews in our data. Say so at the start, then answer only if the reviews below are still useful.`,
+      `The question mentions ${dropped.join(", ")}, which has no reviews in our data. Your first sentence must say there are no reviews for ${dropped.join(", ")}. Then answer only if the reviews below are still useful, and say they are from other properties.`,
     );
   }
   return notes.length ? `\n\nNotes:\n- ${notes.join("\n- ")}` : "";

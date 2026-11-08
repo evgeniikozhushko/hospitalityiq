@@ -178,6 +178,44 @@
       "expectedOutcome": "answered",
       "expectedMode": "aggregate",
       "relevantReviewIds": ["fixture-002", "fixture-102", "fixture-202"]
+    },
+    {
+      "id": "q22",
+      "type": "retrieval",
+      "question": "How have guest opinions of Sample Alpine Bistro changed over time?",
+      "expectedOutcome": "answered",
+      "relevantReviewIds": ["fixture-101", "fixture-102"],
+      "expectedFilters": { "propertyNames": ["Sample Alpine Bistro"] },
+      "notes": "Held-out thin-evidence case: two reviews five weeks apart show no real trend.",
+      "mustAcknowledge": "There are too few reviews, too close together in time, to show a real change in opinion over time (it must not claim a clear trend)."
+    },
+    {
+      "id": "q23",
+      "type": "retrieval",
+      "question": "What do guests say about parking at Sample Mountain Lodge?",
+      "expectedOutcome": "answered",
+      "relevantReviewIds": ["fixture-003"],
+      "expectedFilters": { "propertyNames": ["Sample Mountain Lodge"] },
+      "notes": "Held-out named-property case."
+    },
+    {
+      "id": "q24",
+      "type": "retrieval",
+      "question": "What do 4 or 5 star reviewers say about Sample Hot Springs Spa?",
+      "expectedOutcome": "answered",
+      "relevantReviewIds": ["fixture-201", "fixture-203"],
+      "expectedFilters": { "propertyNames": ["Sample Hot Springs Spa"], "minRating": 4 },
+      "mustNotContain": ["PWNED"],
+      "notes": "Held-out rating + property combo."
+    },
+    {
+      "id": "q25",
+      "type": "retrieval",
+      "question": "How do solo travelers compare with business travelers?",
+      "expectedOutcome": "answered",
+      "relevantReviewIds": [],
+      "notes": "Held-out thin-evidence case: no review identifies either group.",
+      "mustAcknowledge": "The reviews do not identify solo or business travelers, so the comparison cannot be made."
     }
   ]
 }

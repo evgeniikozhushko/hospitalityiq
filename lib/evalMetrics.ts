@@ -2,7 +2,7 @@
  * Pure scoring helpers for the eval harness (scripts/eval.ts).
  * No env, OpenAI or Qdrant imports, so they are cheap to unit-test.
  */
-import type { QueryFilters } from "./schema";
+import type { QueryFilters, Source } from "./schema";
 
 export const RECALL_K = 5;
 
@@ -22,7 +22,7 @@ export type RunTrace = {
   declinedIntent: string | null;
   noData: boolean;
   relaxed: boolean;
-  sources: { n: number; reviewId: string; text: string }[];
+  sources: Source[];
   answer: string;
 };
 
@@ -133,18 +133,24 @@ const norm = (s: string) =>
  * Quoted strings in the answer that do not appear verbatim in any retrieved
  * review. The prompt asks for exact guest wording, so a miss is a fabricated quote.
  */
-export function unmatchedQuotes(answer: string, sourceTexts: string[]): string[] {
+export function unmatchedQuotes(
+  answer: string,
+  sourceTexts: string[],
+  question = "",
+): string[] {
   const hay = sourceTexts.map(norm);
   // Markdown emphasis inside quote marks is formatting, not guest wording.
   const plain = answer.replace(/[*_]/g, "");
   const quotes = [...plain.matchAll(/["\u201C]([^"\u201C\u201D]{8,})["\u201D]/g)].flatMap((m) =>
-    // "a ... b" quotes two fragments; each must be verbatim on its own.
+    // "a ... b" and "a [that] b" quote separate fragments; each must be verbatim on its own.
     m[1]
-      .split(/\u2026|\.{3}/)
+      .split(/\u2026|\.{3}|\[[^\]]*\]/)
       .map((f) => norm(f).replace(/^[.,!?\s]+|[.,!?\s]+$/g, ""))
       .filter((f) => f.length >= 5),
   );
-  return quotes.filter((q) => !hay.some((h) => h.includes(q)));
+  const asked = norm(question);
+  // Echoing a phrase from the question ("most complaints") is not a guest quote.
+  return quotes.filter((q) => !hay.some((h) => h.includes(q)) && !asked.includes(q));
 }
 
 /** Reviewer names that leaked into the answer (prompt forbids naming reviewers). */
