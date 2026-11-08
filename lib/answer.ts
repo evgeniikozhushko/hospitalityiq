@@ -74,10 +74,13 @@ function buildNotes(relaxed: boolean, dropped: string[]): string {
   return notes.length ? `\n\nNotes:\n- ${notes.join("\n- ")}` : "";
 }
 
-export async function* answerQuestion(question: string): AsyncGenerator<AnswerEvent> {
+export async function* answerQuestion(
+  question: string,
+  opts: { today?: string } = {},
+): AsyncGenerator<AnswerEvent> {
   const properties = await listProperties();
   const { plan, droppedPropertyNames } = sanitizePlan(
-    await planQuery(question, properties),
+    await planQuery(question, properties, opts.today),
     properties,
   );
   yield { type: "plan", plan, droppedPropertyNames };

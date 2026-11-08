@@ -3,8 +3,13 @@ import { z } from "zod";
 /**
  * Shape of a review as returned by the Google Business Profile API
  * (accounts.locations.reviews). Only the fields we use are listed;
- * unknown extra fields are ignored. Verify against Google's docs once
+ * unknown extra fields are ignored. Needs verification against Google's docs once
  * API access is approved.
+ *
+ * Defines the output shape:
+ * QueryIntent
+ * QueryFiltersSchema
+ * QueryPlanSchema
  */
 export const StarRating = z.enum([
   "STAR_RATING_UNSPECIFIED",

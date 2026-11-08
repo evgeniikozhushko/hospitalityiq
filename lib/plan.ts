@@ -37,8 +37,13 @@ filters (use null for anything the question does not clearly state; when unsure,
 - since / until (YYYY-MM-DD): only for explicit time ranges ("last year", "since March", "in 2025"), resolved against today's date.`;
 }
 
-export async function planQuery(question: string, properties: string[]): Promise<QueryPlan> {
-  const today = new Date().toISOString().slice(0, 10);
+// It sends the question plus the list of known properties to OpenAI, and the answer comes back as a Zod-checked plan. plannerPrompt() above it holds the actual routing rules.
+export async function planQuery(
+  question: string,
+  properties: string[],
+  // Injectable so evals resolve "last year" the same way on every run.
+  today: string = new Date().toISOString().slice(0, 10),
+): Promise<QueryPlan> {
   const res = await openai.responses.parse({
     model: env.OPENAI_PLANNER_MODEL || env.OPENAI_CHAT_MODEL,
     instructions: plannerPrompt(properties, today),

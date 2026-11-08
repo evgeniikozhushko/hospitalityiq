@@ -10,6 +10,7 @@
     "ingest": "node --env-file=.env.local --import tsx scripts/ingest.ts",
     "search": "node --env-file=.env.local --import tsx scripts/search.ts",
     "ask": "node --env-file=.env.local --import tsx scripts/ask.ts",
+    "eval": "node --env-file=.env.local --import tsx scripts/eval.ts",
     "test": "vitest run"
   },
   "dependencies": {

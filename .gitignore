@@ -41,3 +41,6 @@ yarn-error.log*
 next-env.d.ts
 qdrant_storage/
 !.env.example
+
+# eval output (evals/baseline.json is committed on purpose)
+/evals/results/
