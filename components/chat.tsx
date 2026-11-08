@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { loadAnswer, saveAnswer } from "@/lib/askPersistence"
 import { AlertCircleIcon, InfoIcon } from "lucide-react"
 
 import { Answer } from "@/components/answer"
@@ -66,6 +67,36 @@ export function Chat() {
   const controllerRef = React.useRef<AskController | null>(null)
   const inputId = React.useId()
   const helpId = React.useId()
+
+  const [storageLoaded, setStorageLoaded] = React.useState(false);
+  React.useEffect(() => {
+    const saved = loadAnswer();
+  
+    if (saved) {
+      dispatch({ type: "restore", saved });
+      // Browser storage is only available after the client mounts.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setText(saved.question);
+    }
+  
+    setStorageLoaded(true);
+  }, []);
+  
+  React.useEffect(() => {
+    if (!storageLoaded || state.status !== "complete" || !state.lastQuestion) {
+      return;
+    }
+  
+    saveAnswer({
+      version: 1,
+      question: state.lastQuestion,
+      plan: state.plan,
+      droppedPropertyNames: state.droppedPropertyNames,
+      sources: state.sources,
+      relaxed: state.relaxed,
+      answer: state.answer,
+    });
+  }, [storageLoaded, state]);
 
   // One controller per mount. Disposing on cleanup aborts any live request and silences it, which
   // also keeps React Strict Mode's mount/unmount/mount from leaving a request running.

@@ -5,6 +5,7 @@
  */
 import type { QueryPlan, Source } from "./schema";
 import type { TransportSignal } from "./askClient";
+import type { SavedAnswer } from "./askPersistence";
 
 export type AskStatus =
   | "idle"
@@ -59,7 +60,8 @@ export const initialAskState: AskState = {
 
 export type AskAction =
   | { type: "submit"; id: number; question: string }
-  | { type: "signal"; id: number; signal: TransportSignal };
+  | { type: "signal"; id: number; signal: TransportSignal }
+  | { type: "restore"; saved: SavedAnswer };
 
 export function askReducer(state: AskState, action: AskAction): AskState {
   if (action.type === "submit") {
@@ -68,6 +70,19 @@ export function askReducer(state: AskState, action: AskAction): AskState {
       activeId: action.id,
       lastQuestion: action.question,
       status: "connecting",
+    };
+  }
+
+  if (action.type === "restore") {
+    return {
+      ...initialAskState,
+      lastQuestion: action.saved.question,
+      status: "complete",
+      plan: action.saved.plan,
+      droppedPropertyNames: action.saved.droppedPropertyNames,
+      sources: action.saved.sources,
+      relaxed: action.saved.relaxed,
+      answer: action.saved.answer,
     };
   }
 
