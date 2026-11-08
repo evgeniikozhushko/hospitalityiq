@@ -67,21 +67,93 @@ export function propertyOnly(f: QueryFilters): QueryFilters {
 }
 
 /**
- * Drop property names the planner invented: an unknown name would filter
- * everything out and produce a false "no data" answer. Matching ignores case
- * and maps to the canonical spelling.
+ * Names that mean "the whole company", not one property (the parent owns the
+ * properties but has no reviews of its own). Normalized form: lowercase, no
+ * punctuation. Matched against whole names only, see isCompanyAlias.
+ */
+export const COMPANY_ALIASES: ReadonlySet<string> = new Set([
+  "bcp",
+  "banff caribou properties",
+]);
+
+const CORPORATE_SUFFIXES = new Set(["ltd", "inc", "llc", "corp"]);
+
+/** Lowercase, drop a trailing possessive and punctuation, collapse spaces, drop a trailing "Ltd"/"Inc". */
+function normalizeName(name: string): string {
+  const base = name
+    .toLowerCase()
+    .trim()
+    // Possessive first (straight or curly), or "BCP's" would become "bcps".
+    .replace(/['’]s?$/, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = base.split(" ");
+  while (words.length > 1 && CORPORATE_SUFFIXES.has(words[words.length - 1])) words.pop();
+  return words.join(" ");
+}
+
+/**
+ * True only when the whole normalized name equals an alias. Never a substring
+ * match: "Banff Caribou Lodge" is a real property and must not be swallowed.
+ */
+export function isCompanyAlias(name: string): boolean {
+  const n = normalizeName(name);
+  return n !== "" && COMPANY_ALIASES.has(n);
+}
+
+/**
+ * Find a company alias written in free text (the user's question). Whole words or
+ * phrases only: "bcp" matches as a standalone word, "banff caribou properties"
+ * as a full phrase, and "Banff Caribou Lodge" or "bcpx" match nothing.
+ * Returns the normalized alias, or null.
+ */
+export function findCompanyAlias(text: string): string | null {
+  const words = ` ${text
+    .toLowerCase()
+    .replace(/['’]s\b/g, "") // possessive before punctuation, or "BCP's" -> "bcps"
+    .replace(/[.'’]/g, "") // B.C.P. -> bcp
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()} `;
+  for (const alias of COMPANY_ALIASES) {
+    if (words.includes(` ${alias} `)) return alias;
+  }
+  return null;
+}
+
+/**
+ * Clean the planner's property names before they become a Qdrant filter.
+ * - Known names are kept, mapped to the canonical spelling (case-insensitive).
+ *   A known name always wins, even if it looks like an alias.
+ * - A company alias (BCP) means the whole portfolio: it is not a property, so it
+ *   is not "dropped". If no specific property remains, `portfolioAlias` reports it
+ *   so the answer can say it searched all properties.
+ * - Anything else is an invented/unknown name: dropped, because it would filter
+ *   everything out and produce a false "no data" answer.
+ *
+ * With `question`, the portfolio scope is also detected from the question text, so
+ * it does not depend on whether the planner or this function handled the alias.
+ * It only applies when no property filter remains and the alias is not part of a
+ * dropped name (so "BCP Lodge" never counts as portfolio-wide).
  */
 export function sanitizePlan(
   plan: QueryPlan,
   knownProperties: string[],
-): { plan: QueryPlan; droppedPropertyNames: string[] } {
+  question?: string,
+): { plan: QueryPlan; droppedPropertyNames: string[]; portfolioAlias: string | null } {
   const byLower = new Map(knownProperties.map((p) => [p.toLowerCase(), p]));
   const kept: string[] = [];
   const dropped: string[] = [];
+  let alias: string | null = null;
   for (const n of plan.filters.propertyNames ?? []) {
     const canonical = byLower.get(n.trim().toLowerCase());
     if (canonical) kept.push(canonical);
+    else if (isCompanyAlias(n)) alias ??= n.trim();
     else dropped.push(n);
+  }
+
+  if (kept.length === 0 && !alias && question && !dropped.some((d) => findCompanyAlias(d))) {
+    alias = findCompanyAlias(question);
   }
 
   return {
@@ -93,5 +165,7 @@ export function sanitizePlan(
       },
     },
     droppedPropertyNames: dropped,
+    // Only when no specific property remains; otherwise the search is not portfolio-wide.
+    portfolioAlias: kept.length === 0 ? alias : null,
   };
 }

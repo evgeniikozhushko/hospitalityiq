@@ -182,3 +182,4 @@ Value is measured as hours saved × hourly cost (illustration: 5 h/week at $35/h
 4. Qdrant collection redesign with named dense + sparse vectors
 5. Router schema (route + extracted filters)
 6. Re-label the eval dataset against real reviews when they arrive (current labels use 8 fictional reviews)
+7. When connecting the Google Business Profile API, map each location to a `propertyType` (hotel, restaurant, spa). GBP does not supply it, and the planner's type filter depends on it. Company aliases (BCP, Banff Caribou Properties) live in `COMPANY_ALIASES` in `lib/filters.ts`

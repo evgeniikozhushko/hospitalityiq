@@ -4,6 +4,7 @@
  *
  * Yields events so the same pipeline drives the API route (NDJSON) and the CLI.
  */
+import { buildNotes } from "./answerNotes";
 import { env } from "./env";
 import { sanitizePlan } from "./filters";
 import { embed, openai } from "./openai";
@@ -65,29 +66,15 @@ function buildContext(sources: Source[], mode: QueryPlan["mode"]): string {
     .join("\n\n");
 }
 
-function buildNotes(relaxed: boolean, dropped: string[]): string {
-  const notes: string[] = [];
-  if (relaxed) {
-    notes.push(
-      "The requested time period or rating filter matched no reviews, so these results ignore it. Your first sentence must say there are no reviews for that period or rating and that the answer uses reviews from other dates or ratings.",
-    );
-  }
-  if (dropped.length) {
-    notes.push(
-      `The question mentions ${dropped.join(", ")}, which has no reviews in our data. Your first sentence must say there are no reviews for ${dropped.join(", ")}. Then answer only if the reviews below are still useful, and say they are from other properties.`,
-    );
-  }
-  return notes.length ? `\n\nNotes:\n- ${notes.join("\n- ")}` : "";
-}
-
 export async function* answerQuestion(
   question: string,
   opts: { today?: string } = {},
 ): AsyncGenerator<AnswerEvent> {
   const properties = await listProperties();
-  const { plan, droppedPropertyNames } = sanitizePlan(
+  const { plan, droppedPropertyNames, portfolioAlias } = sanitizePlan(
     await planQuery(question, properties, opts.today),
     properties,
+    question,
   );
   yield { type: "plan", plan, droppedPropertyNames };
 
@@ -108,7 +95,7 @@ export async function* answerQuestion(
   const stream = openai.responses.stream({
     model: env.OPENAI_CHAT_MODEL,
     instructions: ANSWER_INSTRUCTIONS + (plan.mode === "aggregate" ? AGGREGATE_RULES : ""),
-    input: `Question: ${question}${buildNotes(relaxed, droppedPropertyNames)}\n\nReviews:\n\n${buildContext(sources, plan.mode)}`,
+    input: `Question: ${question}${buildNotes({ relaxed, dropped: droppedPropertyNames, portfolioAlias })}\n\nReviews:\n\n${buildContext(sources, plan.mode)}`,
   });
   for await (const event of stream) {
     if (event.type === "response.output_text.delta") {

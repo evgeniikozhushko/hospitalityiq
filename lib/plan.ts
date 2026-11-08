@@ -4,6 +4,7 @@
  */
 import { zodTextFormat } from "openai/helpers/zod";
 import { env } from "./env";
+import { COMPANY_ALIASES } from "./filters";
 import { openai } from "./openai";
 import { PropertyType, QueryPlanSchema, type QueryPlan } from "./schema";
 
@@ -34,6 +35,7 @@ searchQuery
 filters (use null for anything the question does not clearly state; when unsure, leave it null)
 - propertyTypes: only if the question names a type ("our hotels", "restaurants").
 - propertyNames: only names from the known list. Match loose references ("the lodge") to the full name. If a named property isn't in the list, still copy the name as written. Whenever the question names a property, ALWAYS set propertyNames, even if you also set propertyTypes.
+- Company names are NOT properties: ${[...COMPANY_ALIASES].map((a) => `"${a}"`).join(", ")} (any capitalization or punctuation), "our company" and "all our properties" mean the whole portfolio. For these leave propertyNames null, and propertyTypes null unless the question also names a type ("all our hotels" -> propertyTypes ["hotel"]). A name that merely starts like the company but is not exactly it (for example "Banff Caribou Lodge") is a property name.
 - minRating / maxRating: only if the question states stars or explicitly says positive/negative reviews. "Complaints" or "praise" alone do NOT imply a rating filter.
 - months: seasons map to months: winter [12,1,2], spring [3,4,5], summer [6,7,8], fall/autumn [9,10,11]. Named months map to their numbers.
 - since / until (YYYY-MM-DD): only for explicit time ranges ("last year", "since March", "in 2025"), resolved against today's date.`;

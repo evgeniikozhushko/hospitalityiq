@@ -216,6 +216,34 @@
       "relevantReviewIds": [],
       "notes": "Held-out thin-evidence case: no review identifies either group.",
       "mustAcknowledge": "The reviews do not identify solo or business travelers, so the comparison cannot be made."
+    },
+    {
+      "id": "q26",
+      "type": "behavior",
+      "question": "What do guests praise most across BCP?",
+      "expectedOutcome": "answered",
+      "expectedFilters": { "propertyNames": null },
+      "mustNotContain": ["no reviews for", "No reviews for"],
+      "mustAcknowledge": "The answer says it is searching all properties (the whole company), not a single property.",
+      "notes": "BCP is the parent company (Banff Caribou Properties), not a property. Covered by the planner prompt rule AND the sanitizePlan alias safety net. Must not say there are no reviews for BCP."
+    },
+    {
+      "id": "q27",
+      "type": "behavior",
+      "question": "What do guests say across all our properties?",
+      "expectedOutcome": "answered",
+      "expectedFilters": { "propertyNames": null, "propertyTypes": null },
+      "mustNotContain": ["no reviews for", "No reviews for"],
+      "notes": "Prompt-only phrasing: no safety net covers this, so a failure here means the model ignored the planner prompt rule."
+    },
+    {
+      "id": "q28",
+      "type": "behavior",
+      "question": "What do guests praise at all our hotels?",
+      "expectedOutcome": "answered",
+      "expectedFilters": { "propertyNames": null, "propertyTypes": ["hotel"] },
+      "mustNotContain": ["no reviews for", "No reviews for"],
+      "notes": "Prompt-only phrasing: whole portfolio of one type. propertyNames must stay null; propertyTypes hotel is legitimate."
     }
   ]
 }
