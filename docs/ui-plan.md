@@ -188,3 +188,49 @@ Conversation history, CSV upload, auth, themes and charts, the dashboard block, 
 5. Live Qdrant and OpenAI checks are not part of the default run. A real end-to-end question costs money and needs the shared services, so I ask first. I never stop or alter Qdrant to simulate failure.
 6. Eval results: I do not re-run `npm run eval` (paid calls). The claim is limited to what is checkable: `git status` shows nothing modified or regenerated under `evals/` and `scripts/`, none of the pipeline files above changed, and a grep shows nothing in `lib/`, `scripts/` or `evals/` imports from `components/` or `app/`. I will say plainly that the eval was not re-run, so "unaffected" means "untouched", not "re-measured".
 7. Sample-content greps from section 1 pass on generated files, and `/dashboard` does not exist.
+
+## Gate A findings (shadcn CLI 4.23.0, read-only)
+Status: Gate A done. Only the CLI package was downloaded (npm cache via `npx`). No `init`, no `add`, no `npm install`, no project files written. `git status --porcelain --untracked-files=all` was identical before and after (baseline saved in the session scratchpad).
+
+What matched the earlier registry read:
+- `view sidebar-16` returned the same eight registry dependencies and the same files: demo `app/dashboard/page.tsx`, `app-sidebar`, `nav-main`, `nav-projects`, `nav-secondary`, `nav-user`, `search-form`, `site-header`. No cookie, `defaultOpen` or `aria-disabled` code in the block's own files.
+- `view sidebar` returned the same dependencies (`cn`, `radix-ui`, `class-variance-authority`, `lucide-react`) and registry dependencies (`button`, `separator`, `sheet`, `tooltip`, `input`, `use-mobile`, `skeleton`). The primitive contains `document.cookie`, `defaultOpen`, `aria-disabled` and `"use client"`, and does not contain `next/headers` or `cookies(`.
+- `shadcn info` detects Next.js 16.4.3, App Router, Tailwind v4 and `app/globals.css`, with no components.json. Tailwind detection works without a `postcss.config`, so that earlier risk did not appear.
+
+What differs from the plan, and needs a decision before Gate B:
+1. **No `new-york-v4` style option.** In CLI 4.23.0, `init` chooses a component base (`--base base|radix|aria`) and a preset (`--preset`; `--defaults` means `--template=next --preset=base-nova`). The plan's "style new-york-v4, neutral" no longer maps to a flag. The `view` results above came from the legacy registry and use `radix-ui`. Initialising with the default preset would use the `base` (Base UI) library, whose components can differ from what I inspected (for example `asChild` versus `render` props), so I should not assume the inspected sidebar source is what gets installed.
+   - Proposed Gate B command: `npx shadcn@latest init --base radix --css-variables` (interactive for anything it still asks, such as the preset), so the installed components match the Radix-based source reviewed here.
+2. **Dry-run is not possible before init.** `add --dry-run` stops at "You need to create a components.json file" and I did not create one. So the exact generated file list cannot be previewed beforehand. Proposed change to Gate B: run `init` first, then `add sidebar-16 textarea button card badge alert skeleton --dry-run` (read-only once `components.json` exists) and list the files it would write, then run the real `add` only if that list matches the allowed list in the hard rules.
+3. **`globals.css` and dependencies may differ from the expected list.** The CLI's `eject` command ("inline shadcn/tailwind.css and remove the shadcn dependency") indicates that `init` can add a `shadcn` package dependency and an `@import "shadcn/tailwind.css"` line. Expected dependency changes are therefore: `shadcn`, `radix-ui`, `class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react`, and possibly `tw-animate-css`. The real list is read from `git diff package.json` after init and reported before `add`.
+4. **Components to be added are unchanged:** `sidebar-16 textarea button card badge alert skeleton`.
+
+Gate B (not yet approved) would cover: `init --base radix --css-variables`, the read-only `add --dry-run` check, then the real `add`, with the file inventory before and after as described in section 1.
+
+## Implementation status
+Gate B was approved with the Radix base. Installed: `init --base radix --preset nova --css-variables` (the CLI asks for a preset when none is given; Nova uses Lucide icons and Geist, which the app already uses), then `add sidebar-16 textarea button card badge alert skeleton`. The `add --dry-run` run before the real add listed 25 files, all inside the allowed list; nothing outside it was created or changed (`app/layout.tsx` was not touched by the CLI).
+
+Built:
+- `lib/`: `ndjson`, `askWire`, `askClient`, `askState`, `askController`, `answerText`, `askStatus`, `alertRole`, `focusSource`, `planChips`, with tests, plus test-only helpers `testStreams.ts` and `testFixtures.ts`.
+- `components/`: `chat`, `answer`, `source-card`, `app-sidebar` (rewritten), `site-header` (rewritten). `app/page.tsx` and `app/layout.tsx` (title and description) changed.
+- Deleted generated demo files: `app/dashboard/`, `nav-main`, `nav-projects`, `nav-secondary`, `nav-user`, `search-form`, and the unused `ui/` files `collapsible`, `dropdown-menu`, `avatar`, `label`.
+
+Differences from the plan, and hand edits to generated files:
+- `cn` is an npm package here, not a local helper. The registry lists `cn` as a dependency, so `init` created `lib/utils.ts` as `export { cn } from "cn"` and added `cn` to `package.json`. It is published from `github.com/shadcn-ui/cn`, maintained by `shadcn`, and has no install scripts. Standard shadcn used `clsx` plus `tailwind-merge`; this is a different implementation of the same helper.
+- `init` also added dependencies `shadcn`, `radix-ui`, `class-variance-authority`, `lucide-react`, `tw-animate-css`, and `app/globals.css` now imports `shadcn/tailwind.css`. The lockfile grew by about 4,300 lines, mostly from the `shadcn` package.
+- `app/globals.css` (generated, hand-fixed): `--font-sans: var(--font-sans)` referred to itself, so it is now `var(--font-geist-sans)`. Light theme only; the old OS dark-mode block is gone and nothing sets `.dark`.
+- `hooks/use-mobile.ts` (generated, hand-rewritten): the generated version failed this repo's `react-hooks/set-state-in-effect` lint rule, so it now uses `useSyncExternalStore` with the same breakpoint and a `false` server snapshot.
+- `components/ui/alert.tsx` needed no edit: `role="alert"` is placed before `{...props}`, so a caller's `role="note"` wins.
+- The installed `sidebar.tsx` writes a `sidebar_state` cookie in `setOpen` (client-side only), has no `next/headers` or `cookies(`, and no longer wraps itself in `TooltipProvider`. The CLI suggests adding `TooltipProvider` to the layout; it is not needed because nothing here passes a `tooltip` to `SidebarMenuButton`.
+
+Verified (all run after the last code change):
+- `npx tsc --noEmit` clean, `npx eslint .` clean, `npx vitest run` 159 tests passing across 12 files.
+- `npm run build` passes. Route table: `/` is `○ (Static)`, `/api/ask` is `ƒ (Dynamic)`.
+- No sample content in generated or rewritten UI files, `/dashboard` does not exist, no `dangerouslySetInnerHTML` anywhere.
+- No changes under `scripts/`, `evals/`, `app/api/`, or `lib/answer.ts`, `plan.ts`, `filters.ts`, `retrieve.ts`, `schema.ts`; nothing in `lib/`, `scripts/` or `evals/` imports from `components/` or `app/`.
+- The eval was not re-run (paid calls), so "unaffected" means "untouched", not "re-measured".
+
+Verification limitation (not run):
+- The in-browser scenarios in section 9 were not run. The only browser tool in this session is a remote hosted browser that cannot reach `localhost`, and neither the built-in browser nor Chrome tools are available, so the fetch-interception check could not be made fail-closed. Not verified in a real browser: streaming rendering, citation click scroll and focus, the status region and alert roles per transition, keyboard access to the disabled sidebar items, the narrow-viewport sheet and any first-paint flash, and the dev-server behaviour with the `radix-nova` preset. The logic behind these is covered by the Vitest suite (state machine, transport, abort, parser, citations, focus helper, status text, alert roles), but the rendered DOM is untested.
+- Live Qdrant and OpenAI checks were not run.
+
+To finish verification, run `npm run dev` and open `http://localhost:3000`, or give this session a local browser tool.
