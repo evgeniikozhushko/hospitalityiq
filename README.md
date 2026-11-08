@@ -48,13 +48,14 @@ Check `lib/env.ts` for the environment variables the app expects.
 | `scripts/ingest.ts` | Load → validate → sanitize → embed → upsert |
 | `scripts/search.ts` | Dense-only retrieval from the terminal |
 | `data/sample-reviews.json` | Fictional test fixture shaped like the Google API output |
-| `evals/test-questions.md` | Draft test questions for evals |
+| `evals/dataset.json` | Labelled eval questions (`npm run eval`) |
+| `scripts/eval.ts` | Runs the dataset through the real pipeline and scores it |
 | `docs/project-scope.md` | Living scope and decisions document |
 | `docs/gbp-api-access.md` | Google Business Profile API access checklist |
 
 ## Status
 
-Dense-only retrieval works from the terminal. Next up: answer generation with citations, theme taxonomy, Postgres data model, and hybrid (dense + sparse) search. The full status and roadmap are in [section 12 of the project scope](docs/project-scope.md#12-current-build-status).
+Dense-only retrieval, cited answers (`npm run ask`) and an eval harness (`npm run eval`) work. Next up: fixing what the eval baseline found, theme taxonomy, Postgres data model, and hybrid (dense + sparse) search. The full status and roadmap are in [section 12 of the project scope](docs/project-scope.md#12-current-build-status).
 
 ## Data protection
 

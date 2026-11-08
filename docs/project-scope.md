@@ -170,13 +170,15 @@ Value is measured as hours saved × hourly cost (illustration: 5 h/week at $35/h
 - `scripts/ingest.ts`: load → validate → sanitize → embed → upsert
 - `scripts/search.ts`: dense-only retrieval from the terminal (working)
 - `data/sample-reviews.json`: fictional test fixture shaped like the Google API output; to be replaced by real reviews
-- `evals/test-questions.md`: 10 draft test questions
+- Answer pipeline: `lib/plan.ts` (intent, filters), `lib/filters.ts`, `lib/retrieve.ts` (with relaxed retry), `lib/answer.ts` (cited, streamed), `POST /api/ask`, `npm run ask`
+- Eval harness: `evals/dataset.json` (21 labelled cases), `scripts/eval.ts` (`npm run eval`), `lib/evalMetrics.ts` + tests, `lib/evalJudge.ts`; first numbers in `evals/baseline.json`
+- `evals/test-questions.md`: original draft questions (superseded by `dataset.json`)
 - `docs/gbp-api-access.md`: API access checklist
 
 **Next**
-1. Answer generation with citations (`ask` command), completing the dense-only baseline
+1. Fix what the eval baseline found (see `evals/baseline.json`), then re-baseline on real reviews
 2. Theme taxonomy, agreed with marketing
 3. Postgres data model
 4. Qdrant collection redesign with named dense + sparse vectors
 5. Router schema (route + extracted filters)
-6. Expand the test set to 20 questions; label relevant reviews once real data arrives
+6. Re-label the eval dataset against real reviews when they arrive (current labels use 8 fictional reviews)
