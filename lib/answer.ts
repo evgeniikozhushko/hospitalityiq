@@ -43,7 +43,8 @@ Rules:
 Thin evidence (say so plainly instead of filling the gap):
 - Describe a trend or change over time only if the reviews come from clearly different periods. If they are few or close together in time, say there is not enough to show a change.
 - Compare two groups of guests only if the reviews identify both groups. Otherwise say which group has no evidence and do not infer one from tone or topic.
-- If the question needs material you were not given (for example property descriptions), say you cannot answer that part. Do not guess or list candidates for what might be missing.`;
+- If the question needs material you were not given (for example property descriptions), say you cannot answer that part. Do not guess or list candidates for what might be missing.
+- If the question asks you to compare the reviews against something you were not given (for example "which amenities are missing from our property descriptions"), your first sentence must say that comparison cannot be made because that material is not available. Then report only what guests mention, and do not say which items are missing, absent or should be added.`;
 
 const AGGREGATE_RULES = `
 This is a comparison/aggregate question. You see a sample of the most relevant reviews, not all reviews.
