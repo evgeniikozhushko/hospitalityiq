@@ -93,7 +93,7 @@ Across every case answered on the retrieval route, a new judge rubric item asks:
 ## Risks
 
 - **Misrouting.** A qualitative question sent to SQL returns a bare number; the reverse keeps today's behaviour. Hence boundary cases in both directions and a fallback that never fabricates a count.
-- **Overcounting by theme mapping.** A narrower topic mapped onto a broad theme would be an exact-looking wrong answer. Hence explicit synonyms, `theme: null` for anything else, and the theme label in every answer.
+- **Overcounting by theme mapping.** A narrower topic mapped onto a broad theme would be an exact-looking wrong answer. Hence explicit synonyms, an empty `themes` list for anything else, and the theme label in every answer.
 - **Numbers are only as good as the tags.** Today that is 8 fictional fixtures. Answers say "provisional" and state counts against tagged reviews. Real value arrives with AI tagging, which needs marketing's theme list first.
 - **Small numbers read as trends.** Hence the `MIN_TREND_MENTIONS` threshold and per-period tagged totals.
 - **UTC vs local month** mismatch between Qdrant and SQL (decision 4).
