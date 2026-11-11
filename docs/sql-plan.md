@@ -168,6 +168,8 @@ Differences from the plan above, all deliberate:
   - *Theme identity.* Taxonomy versions version tag sets, not theme definitions, so a theme's slug and meaning must stay stable. A label can be edited. If marketing changes what a theme means (split, merge, redefine), add a new slug and a new `taxonomy_version`; never repurpose an existing slug. Versioned definitions are deferred until the first real taxonomy change.
   - *Import tracking.* `last_import_id` is nullable for backfills; the missing-review queries use `IS DISTINCT FROM`, so a row with no import counts as not seen.
 - **Reindex invalidates hashes before removing extras.** Imports are not blocked by the sync lock, so a review can be soft-deleted between reindex's sync and its reconcile. Its point is then removed as an extra; the review's indexed hashes are cleared first, so a later restore with unchanged content is re-embedded instead of being skipped. Clearing before removing is retry-safe: if the removal fails, the next sync finds the never-indexed review and removes the point.
+- **Hash invariant.** `indexed_text_hash` / `indexed_payload_hash` record what was last sent to Qdrant. NULL means "index state unknown; check or repair", not "the point is absent": sync embeds a NULL-hash review that should be indexed, and checks Qdrant by point ID for a NULL-hash review that should not be.
+- **If stronger exclusion during reindex is ever needed:** use one source-level advisory lock that imports also acquire. Locking existing review rows would not block new inserts, and checking whether an import is running leaves a race between the check and the rebuild. Today imports stay available during a rebuild and the stores converge on the next sync.
 
 ## Open questions
 
