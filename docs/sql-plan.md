@@ -1,6 +1,6 @@
 # Postgres foundation for review counts
 
-Status: plan, not yet built. Last updated 2026-11-08.
+Status: built (local foundation). Last updated 2026-11-09. Section "As built" lists where the build differs from the plan.
 
 ## Why
 
@@ -146,6 +146,30 @@ Three commits or PRs on a new branch:
 1. Docker Compose, env, roles, migration runner, first migration.
 2. Ingest dual write, hashes, snapshot handling, reconcile and reindex.
 3. Manual tags loader, synthetic seed, statistics templates, CLI, tests, README setup section.
+
+## As built
+
+Differences from the plan above, all deliberate:
+
+- **No stored `payload_hash`.** The payload hash is computed at sync time from the review joined to its property and compared with `indexed_payload_hash`. A property rename or rating change is therefore noticed without keeping a second "current" hash in step. `indexed_*` hashes store what was actually SENT, so an edit made while a sync runs can never be marked as indexed (covered by a test). A per-source advisory lock stops overlapping syncs, in place of a conditional update.
+- **Indexable means live, with text, and with a rating.** The Qdrant payload requires a rating, so a review with text but an unspecified rating stays in Postgres only. Reconcile and sync use the same rule (`INDEXABLE_SQL` in `lib/db/payload.ts`).
+- **Role setup is a script, not psql variables.** `npm run db:setup` creates the read-only role with the name and password from `DATABASE_URL_READONLY` and runs the static grants in `db/setup/roles.sql`. No passwords live in the repo. It also sets `default_transaction_read_only` on the role.
+- **Ports.** Dev Postgres is on 5433 and the disposable test instance (memory only) on 5434, because 5432 is commonly taken by another local Postgres.
+- **Complete snapshots.** A complete snapshot with zero reviews is refused (it would delete everything). Each property is its own transaction and its own `imports` row, so one failing property records a failed import and deletes nothing while others still import.
+- **Config.** Database URLs are read in `lib/db/config.ts`, not `lib/env.ts`, so database scripts do not need an OpenAI key.
+- **Test config.** `vitest.config.mts` turns off file parallelism because database test files share one disposable instance.
+- **Timezone.** `properties.timezone` defaults to `America/Edmonton`; there is no ingest field for it yet, so set it with SQL for a property elsewhere.
+- **Statistics** return per-property rows plus a total, each with the five coverage numbers, and a trend reports `percent: null` when the previous period had no mentions.
+- **Payload refresh replaces, not merges.** A metadata refresh uses Qdrant `overwrite_payload`; `set_payload` merges, so a removed field (e.g. an owner reply) would stay searchable. `npm run reindex` heals any point refreshed before this fix.
+- **Legacy points.** Sync also asks Qdrant, by point ID, about reviews that must not be indexed but were never indexed by this pipeline, and removes any point found (an older pipeline may have left one under the same ID). Points with no `source` payload that match no Postgres review are never deleted automatically; reconcile reports them as out of scope.
+- **Reindex holds the sync lock.** `reindex` takes the per-source advisory lock for the whole rebuild (clear hashes, sync, remove extras, final reconcile). Otherwise a concurrent import and sync could add a point between reconcile's Postgres read and its Qdrant listing, and reindex would delete it as an "extra" while Postgres still recorded it as indexed. A concurrent ingest simply waits.
+- **Conventions for later changes (no code yet).**
+  - *Property identity.* `properties.location_id` is unique without a source, which is fine for the Google import. Before a second provider is added, add `property_sources(property_id, source, external_location_id)` with `UNIQUE (source, external_location_id)` (backfill it from `properties`), so one hotel can carry several provider IDs. This is required before enabling any second provider, not optional: the unique index on `lower(name)` only rejects a duplicate when both providers use the same name (ignoring case). A provider that names the hotel differently would silently create a second property, splitting its reviews and counts.
+  - *Theme identity.* Taxonomy versions version tag sets, not theme definitions, so a theme's slug and meaning must stay stable. A label can be edited. If marketing changes what a theme means (split, merge, redefine), add a new slug and a new `taxonomy_version`; never repurpose an existing slug. Versioned definitions are deferred until the first real taxonomy change.
+  - *Import tracking.* `last_import_id` is nullable for backfills; the missing-review queries use `IS DISTINCT FROM`, so a row with no import counts as not seen.
+- **Reindex invalidates hashes before removing extras.** Imports are not blocked by the sync lock, so a review can be soft-deleted between reindex's sync and its reconcile. Its point is then removed as an extra; the review's indexed hashes are cleared first, so a later restore with unchanged content is re-embedded instead of being skipped. Clearing before removing is retry-safe: if the removal fails, the next sync finds the never-indexed review and removes the point.
+- **Hash invariant.** `indexed_text_hash` / `indexed_payload_hash` record what was last sent to Qdrant. NULL means "index state unknown; check or repair", not "the point is absent": sync embeds a NULL-hash review that should be indexed, and checks Qdrant by point ID for a NULL-hash review that should not be.
+- **If stronger exclusion during reindex is ever needed:** use one source-level advisory lock that imports also acquire. Locking existing review rows would not block new inserts, and checking whether an import is running leaves a race between the check and the rebuild. Today imports stay available during a rebuild and the stores converge on the next sync.
 
 ## Open questions
 

@@ -1,0 +1,177 @@
+{
+  "_note": "Synthetic labels verify SQL behaviour only. They are not evaluation ground truth. syn-L07 is deliberately untagged; syn-L08 is rating-only.",
+  "source": "synthetic",
+  "taxonomyVersion": "v1",
+  "reviews": [
+    {
+      "sourceReviewId": "syn-L01",
+      "themes": [
+        {
+          "theme": "rooms",
+          "sentiment": "positive"
+        },
+        {
+          "theme": "parking",
+          "sentiment": "negative"
+        }
+      ]
+    },
+    {
+      "sourceReviewId": "syn-L02",
+      "themes": [
+        {
+          "theme": "parking",
+          "sentiment": "negative"
+        },
+        {
+          "theme": "front-desk",
+          "sentiment": "negative"
+        }
+      ]
+    },
+    {
+      "sourceReviewId": "syn-L03",
+      "themes": [
+        {
+          "theme": "parking",
+          "sentiment": "positive"
+        },
+        {
+          "theme": "parking",
+          "sentiment": "negative"
+        }
+      ]
+    },
+    {
+      "sourceReviewId": "syn-L04",
+      "themes": [
+        {
+          "theme": "housekeeping",
+          "sentiment": "positive"
+        },
+        {
+          "theme": "value",
+          "sentiment": "positive"
+        }
+      ]
+    },
+    {
+      "sourceReviewId": "syn-L05",
+      "themes": [
+        {
+          "theme": "rooms",
+          "sentiment": "negative"
+        },
+        {
+          "theme": "housekeeping",
+          "sentiment": "negative"
+        },
+        {
+          "theme": "parking",
+          "sentiment": "negative"
+        }
+      ]
+    },
+    {
+      "sourceReviewId": "syn-L06",
+      "themes": []
+    },
+    {
+      "sourceReviewId": "syn-L10",
+      "themes": [
+        {
+          "theme": "parking",
+          "sentiment": "positive"
+        }
+      ]
+    },
+    {
+      "sourceReviewId": "syn-L11",
+      "themes": [
+        {
+          "theme": "parking",
+          "sentiment": "positive"
+        }
+      ]
+    },
+    {
+      "sourceReviewId": "syn-L12",
+      "themes": [
+        {
+          "theme": "parking",
+          "sentiment": "negative"
+        }
+      ]
+    },
+    {
+      "sourceReviewId": "syn-B01",
+      "themes": [
+        {
+          "theme": "food",
+          "sentiment": "positive"
+        },
+        {
+          "theme": "value",
+          "sentiment": "positive"
+        }
+      ]
+    },
+    {
+      "sourceReviewId": "syn-B02",
+      "themes": [
+        {
+          "theme": "food",
+          "sentiment": "negative"
+        },
+        {
+          "theme": "value",
+          "sentiment": "negative"
+        }
+      ]
+    },
+    {
+      "sourceReviewId": "syn-B03",
+      "themes": [
+        {
+          "theme": "food",
+          "sentiment": "positive"
+        },
+        {
+          "theme": "parking",
+          "sentiment": "neutral"
+        }
+      ]
+    },
+    {
+      "sourceReviewId": "syn-S01",
+      "themes": [
+        {
+          "theme": "spa",
+          "sentiment": "positive"
+        }
+      ]
+    },
+    {
+      "sourceReviewId": "syn-S02",
+      "themes": [
+        {
+          "theme": "spa",
+          "sentiment": "positive"
+        },
+        {
+          "theme": "parking",
+          "sentiment": "positive"
+        }
+      ]
+    },
+    {
+      "sourceReviewId": "syn-S03",
+      "themes": [
+        {
+          "theme": "spa",
+          "sentiment": "negative"
+        }
+      ]
+    }
+  ]
+}

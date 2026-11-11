@@ -1,5 +1,4 @@
 import { QdrantClient } from "@qdrant/js-client-rest";
-import { createHash } from "node:crypto";
 import { env } from "./env";
 import { EMBEDDING_DIMENSIONS } from "./openai";
 import type { RetrieveDeps } from "./retrieve";
@@ -68,12 +67,4 @@ export const searchReviews: RetrieveDeps["search"] = async ({ vector, filter, li
   }));
 };
 
-/**
- * Qdrant point IDs must be integers or UUIDs. Google review IDs are neither,
- * so derive a stable UUID from the review ID. Same review -> same point ID,
- * which makes re-running ingestion safe (it overwrites instead of duplicating).
- */
-export function pointIdFor(reviewId: string): string {
-  const h = createHash("sha1").update(reviewId).digest("hex");
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
-}
+export { pointIdFor } from "./pointId";

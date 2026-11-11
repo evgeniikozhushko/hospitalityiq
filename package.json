@@ -11,6 +11,13 @@
     "search": "node --env-file=.env.local --import tsx scripts/search.ts",
     "ask": "node --env-file=.env.local --import tsx scripts/ask.ts",
     "eval": "node --env-file=.env.local --import tsx scripts/eval.ts",
+    "db:migrate": "node --env-file=.env.local --import tsx scripts/migrate.ts",
+    "db:setup": "node --env-file=.env.local --import tsx scripts/db-setup.ts",
+    "reconcile": "node --env-file=.env.local --import tsx scripts/reconcile.ts",
+    "reindex": "node --env-file=.env.local --import tsx scripts/reindex.ts",
+    "tags:load": "node --env-file=.env.local --import tsx scripts/tags.ts",
+    "seed:synthetic": "node --env-file=.env.local --import tsx scripts/seed-synthetic.ts",
+    "stats": "node --env-file=.env.local --import tsx scripts/stats.ts",
     "test": "vitest run"
   },
   "dependencies": {
@@ -22,6 +29,7 @@
     "next": "16.4.3",
     "next-themes": "^0.4.6",
     "openai": "^7.47.0",
+    "pg": "^8.23.1",
     "radix-ui": "^1.8.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -32,6 +40,7 @@
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

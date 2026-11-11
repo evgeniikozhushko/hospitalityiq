@@ -38,6 +38,26 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 
 Check `lib/env.ts` for the environment variables the app expects.
 
+### Local Postgres (review counts)
+
+Postgres holds every review and its theme tags so counts and trends are exact; Qdrant keeps finding quotations. Design: [docs/sql-plan.md](docs/sql-plan.md).
+
+```bash
+docker compose up -d --wait        # Postgres on :5433 (dev) and :5434 (disposable, for tests)
+# copy the DATABASE_URL_* lines from .env.example into .env.local
+npm run db:migrate                 # apply db/migrations (plain SQL, checksummed)
+npm run db:setup                   # create the read-only role used by statistics
+npm run ingest                     # Postgres first, then Qdrant, then a reconcile check
+npm run tags:load                  # hand tags for the fixtures (data/manual-tags.json)
+npm run seed:synthetic             # optional: fictional practice data, Postgres only
+npm run stats -- mentions --theme parking --source synthetic
+npm run stats -- trend --theme parking --since 2026-02-01 --until 2026-02-28 --source synthetic
+npm run reconcile                  # do Postgres and Qdrant hold the same reviews?
+npm run reindex -- --source=google_business_profile   # rebuild Qdrant from Postgres
+```
+
+Integration tests use the disposable instance and are skipped unless `DATABASE_URL_TEST` is set (they refuse non-local or non-`_test` databases). Port 5433 avoids clashing with another local Postgres on 5432.
+
 ## Project layout
 
 | Path | Purpose |
@@ -45,7 +65,11 @@ Check `lib/env.ts` for the environment variables the app expects.
 | `lib/schema.ts` | Zod schemas for Google Business Profile reviews and the stored review record |
 | `lib/sanitize.ts` | Lightweight regex sanitizer (emails, phones, booking refs, card-like numbers) |
 | `lib/qdrant.ts`, `lib/openai.ts`, `lib/env.ts` | Clients and config |
-| `scripts/ingest.ts` | Load → validate → sanitize → embed → upsert |
+| `scripts/ingest.ts` | Load → validate → sanitize → Postgres → embed → Qdrant → reconcile |
+| `db/migrations/`, `db/setup/roles.sql` | Plain-SQL schema and read-only role grants |
+| `lib/db/` | Migration runner, import, Qdrant sync, reconcile/reindex, tag writer |
+| `lib/reviewStats.ts` | Fixed, parameterized SQL statistics (`npm run stats`) |
+| `data/synthetic/`, `data/manual-tags.json` | Practice data and hand tags (mechanics only, not eval ground truth) |
 | `scripts/search.ts` | Dense-only retrieval from the terminal |
 | `data/sample-reviews.json` | Fictional test fixture shaped like the Google API output |
 | `evals/dataset.json` | Labelled eval questions (`npm run eval`) |
@@ -55,7 +79,7 @@ Check `lib/env.ts` for the environment variables the app expects.
 
 ## Status
 
-Dense-only retrieval, cited answers (`npm run ask`) and an eval harness (`npm run eval`) work. Next up: fixing what the eval baseline found, theme taxonomy, Postgres data model, and hybrid (dense + sparse) search. The full status and roadmap are in [section 12 of the project scope](docs/project-scope.md#12-current-build-status).
+Dense-only retrieval, cited answers (`npm run ask`) and an eval harness (`npm run eval`) work. The local Postgres foundation (exact review counts and trends via `npm run stats`) is in place. Next up: routing count and trend questions to it, AI theme tagging, fixing what the eval baseline found, theme taxonomy, and hybrid (dense + sparse) search. The full status and roadmap are in [section 12 of the project scope](docs/project-scope.md#12-current-build-status).
 
 ## Data protection
 
