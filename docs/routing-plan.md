@@ -67,7 +67,7 @@ Add `expectedRoute` (and `expectedStat`) to `evals/dataset.json` and score route
 
 Reported in three separate groups, so a statistics win cannot hide a retrieval regression:
 
-1. **The 26 unchanged cases**, scored exactly as before. They are the same 26 case IDs as in the 26/28 run (2026-11-09, dataset `eec4c0b24c8b`, `evals/results/latest.json`, failed q04 and q05), minus the re-labelled q03 and q04: q01, q02, q05–q28. Compare each case against its result in that run. On these 26 IDs that run scored 25/26, with q05 the only miss; report q05 separately (its judge miss is known and unrelated to routing), so the regression check is 25/25 on the other cases.
+1. **The 26 unchanged cases**, scored exactly as before. They are the same 26 case IDs as in the 26/28 run (2026-11-09, dataset `eec4c0b24c8b`, failed q04 and q05; committed unchanged as `evals/baselines/pre-statistics-routing.json`, so later runs overwriting `evals/results/latest.json` do not lose it), minus the re-labelled q03 and q04: q01, q02, q05–q28. Compare each case against its result in that run. On these 26 IDs that run scored 25/26, with q05 the only miss; report q05 separately (its judge miss is known and unrelated to routing), so the regression check is 25/25 on the other cases.
 2. **Statistics cases** (re-labelled and new): route accuracy and exactness (the rendered text contains the hand-computed numbers).
 3. **Boundary and fallback cases**: route accuracy (target 100%).
 
