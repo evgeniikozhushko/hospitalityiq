@@ -1,0 +1,32 @@
+{
+  "_note": "Provisional hand tags for the fictional fixtures in data/sample-reviews.json (taxonomy v1, a draft pending marketing review). They exercise the database and queries only; they are NOT tagging-accuracy ground truth. fixture-004 is rating-only and cannot be tagged.",
+  "source": "google_business_profile",
+  "taxonomyVersion": "v1",
+  "reviews": [
+    { "sourceReviewId": "fixture-001", "themes": [
+      { "theme": "rooms", "sentiment": "positive" },
+      { "theme": "front-desk", "sentiment": "positive" },
+      { "theme": "other", "sentiment": "positive" } ] },
+    { "sourceReviewId": "fixture-002", "themes": [
+      { "theme": "rooms", "sentiment": "negative" },
+      { "theme": "front-desk", "sentiment": "negative" } ] },
+    { "sourceReviewId": "fixture-003", "themes": [
+      { "theme": "parking", "sentiment": "negative" },
+      { "theme": "value", "sentiment": "negative" },
+      { "theme": "other", "sentiment": "positive" } ] },
+    { "sourceReviewId": "fixture-101", "themes": [
+      { "theme": "food", "sentiment": "positive" },
+      { "theme": "other", "sentiment": "positive" } ] },
+    { "sourceReviewId": "fixture-102", "themes": [
+      { "theme": "food", "sentiment": "positive" },
+      { "theme": "other", "sentiment": "negative" } ] },
+    { "sourceReviewId": "fixture-201", "themes": [
+      { "theme": "spa", "sentiment": "positive" },
+      { "theme": "housekeeping", "sentiment": "positive" } ] },
+    { "sourceReviewId": "fixture-202", "themes": [
+      { "theme": "housekeeping", "sentiment": "negative" },
+      { "theme": "other", "sentiment": "negative" } ] },
+    { "sourceReviewId": "fixture-203", "themes": [
+      { "theme": "spa", "sentiment": "positive" } ] }
+  ]
+}

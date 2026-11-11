@@ -1,0 +1,42 @@
+# Local development databases. Qdrant is still started separately for now.
+#   docker compose up -d --wait
+# Passwords here are throwaway local defaults; never reuse them elsewhere.
+services:
+  postgres:
+    image: postgres:16
+    container_name: hiq-postgres
+    environment:
+      POSTGRES_USER: hiq_migrator
+      POSTGRES_PASSWORD: ${HIQ_ADMIN_PASSWORD:-hiq_dev_admin}
+      POSTGRES_DB: hiq
+    # 5433 because 5432 is commonly taken by another local Postgres.
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - hiq_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hiq_migrator -d hiq"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  # Disposable instance for integration tests: data lives in memory only.
+  postgres-test:
+    image: postgres:16
+    container_name: hiq-postgres-test
+    environment:
+      POSTGRES_USER: hiq_migrator
+      POSTGRES_PASSWORD: hiq_test
+      POSTGRES_DB: hiq_test
+    ports:
+      - "127.0.0.1:5434:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hiq_migrator -d hiq_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  hiq_pgdata:

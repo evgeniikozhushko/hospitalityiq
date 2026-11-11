@@ -1,6 +1,6 @@
 # Postgres foundation for review counts
 
-Status: plan, not yet built. Last updated 2026-11-08.
+Status: built (local foundation). Last updated 2026-11-09. Section "As built" lists where the build differs from the plan.
 
 ## Why
 
@@ -146,6 +146,20 @@ Three commits or PRs on a new branch:
 1. Docker Compose, env, roles, migration runner, first migration.
 2. Ingest dual write, hashes, snapshot handling, reconcile and reindex.
 3. Manual tags loader, synthetic seed, statistics templates, CLI, tests, README setup section.
+
+## As built
+
+Differences from the plan above, all deliberate:
+
+- **No stored `payload_hash`.** The payload hash is computed at sync time from the review joined to its property and compared with `indexed_payload_hash`. A property rename or rating change is therefore noticed without keeping a second "current" hash in step. `indexed_*` hashes store what was actually SENT, so an edit made while a sync runs can never be marked as indexed (covered by a test). A per-source advisory lock stops overlapping syncs, in place of a conditional update.
+- **Indexable means live, with text, and with a rating.** The Qdrant payload requires a rating, so a review with text but an unspecified rating stays in Postgres only. Reconcile and sync use the same rule (`INDEXABLE_SQL` in `lib/db/payload.ts`).
+- **Role setup is a script, not psql variables.** `npm run db:setup` creates the read-only role with the name and password from `DATABASE_URL_READONLY` and runs the static grants in `db/setup/roles.sql`. No passwords live in the repo. It also sets `default_transaction_read_only` on the role.
+- **Ports.** Dev Postgres is on 5433 and the disposable test instance (memory only) on 5434, because 5432 is commonly taken by another local Postgres.
+- **Complete snapshots.** A complete snapshot with zero reviews is refused (it would delete everything). Each property is its own transaction and its own `imports` row, so one failing property records a failed import and deletes nothing while others still import.
+- **Config.** Database URLs are read in `lib/db/config.ts`, not `lib/env.ts`, so database scripts do not need an OpenAI key.
+- **Test config.** `vitest.config.mts` turns off file parallelism because database test files share one disposable instance.
+- **Timezone.** `properties.timezone` defaults to `America/Edmonton`; there is no ingest field for it yet, so set it with SQL for a property elsewhere.
+- **Statistics** return per-property rows plus a total, each with the five coverage numbers, and a trend reports `percent: null` when the previous period had no mentions.
 
 ## Open questions
 

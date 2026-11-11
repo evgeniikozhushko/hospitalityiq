@@ -1,0 +1,125 @@
+[
+  {
+    "_note": "SYNTHETIC test data for SQL mechanics only. Fictional. Never embed or index it. Expected counts are in lib/reviewStats.db.test.ts.",
+    "locationId": "synth-lodge",
+    "propertyName": "Synthetic Lodge",
+    "propertyType": "hotel",
+    "reviews": [
+      {
+        "reviewId": "syn-L01",
+        "starRating": "FIVE",
+        "createTime": "2026-01-05T15:00:00Z",
+        "comment": "Beautiful rooms, but the parking lot was a mess."
+      },
+      {
+        "reviewId": "syn-L02",
+        "starRating": "TWO",
+        "createTime": "2026-01-20T15:00:00Z",
+        "comment": "No parking left and the front desk was rude."
+      },
+      {
+        "reviewId": "syn-L03",
+        "starRating": "FOUR",
+        "createTime": "2026-01-28T15:00:00Z",
+        "comment": "Free parking, though the spots are tiny."
+      },
+      {
+        "reviewId": "syn-L04",
+        "starRating": "FOUR",
+        "createTime": "2026-02-10T15:00:00Z",
+        "comment": "Spotless housekeeping and fair prices."
+      },
+      {
+        "reviewId": "syn-L05",
+        "starRating": "ONE",
+        "createTime": "2026-02-15T15:00:00Z",
+        "comment": "Dirty, noisy room and nowhere to park."
+      },
+      {
+        "reviewId": "syn-L06",
+        "starRating": "THREE",
+        "createTime": "2026-02-20T15:00:00Z",
+        "comment": "It was a hotel."
+      },
+      {
+        "reviewId": "syn-L07",
+        "starRating": "FIVE",
+        "createTime": "2026-02-22T15:00:00Z",
+        "comment": "We loved it."
+      },
+      {
+        "reviewId": "syn-L08",
+        "starRating": "FIVE",
+        "createTime": "2026-02-25T15:00:00Z"
+      },
+      {
+        "reviewId": "syn-L10",
+        "starRating": "FOUR",
+        "createTime": "2026-03-01T06:59:00Z",
+        "comment": "Parking was easy."
+      },
+      {
+        "reviewId": "syn-L11",
+        "starRating": "FOUR",
+        "createTime": "2026-03-01T07:00:00Z",
+        "comment": "Easy parking again."
+      },
+      {
+        "reviewId": "syn-L12",
+        "starRating": "FOUR",
+        "createTime": "2026-03-09T06:30:00Z",
+        "comment": "Parking was a nightmare."
+      }
+    ]
+  },
+  {
+    "locationId": "synth-bistro",
+    "propertyName": "Synthetic Bistro",
+    "propertyType": "restaurant",
+    "reviews": [
+      {
+        "reviewId": "syn-B01",
+        "starRating": "FIVE",
+        "createTime": "2026-01-12T18:00:00Z",
+        "comment": "Wonderful food at a fair price."
+      },
+      {
+        "reviewId": "syn-B02",
+        "starRating": "TWO",
+        "createTime": "2026-02-03T18:00:00Z",
+        "comment": "Bland food and too expensive."
+      },
+      {
+        "reviewId": "syn-B03",
+        "starRating": "FOUR",
+        "createTime": "2026-02-17T18:00:00Z",
+        "comment": "Good food. We parked around the corner."
+      }
+    ]
+  },
+  {
+    "locationId": "synth-spa",
+    "propertyName": "Synthetic Spa",
+    "propertyType": "spa",
+    "reviews": [
+      {
+        "reviewId": "syn-S01",
+        "starRating": "FIVE",
+        "createTime": "2026-01-30T18:00:00Z",
+        "comment": "Great massage."
+      },
+      {
+        "reviewId": "syn-S02",
+        "starRating": "FIVE",
+        "createTime": "2026-02-14T18:00:00Z",
+        "comment": "Relaxing spa and easy parking."
+      },
+      {
+        "reviewId": "syn-S03",
+        "starRating": "TWO",
+        "createTime": "2026-02-18T18:00:00Z",
+        "comment": "The treatment felt rushed."
+      }
+    ]
+  }
+]
