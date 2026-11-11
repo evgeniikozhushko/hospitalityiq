@@ -163,6 +163,10 @@ Differences from the plan above, all deliberate:
 - **Payload refresh replaces, not merges.** A metadata refresh uses Qdrant `overwrite_payload`; `set_payload` merges, so a removed field (e.g. an owner reply) would stay searchable. `npm run reindex` heals any point refreshed before this fix.
 - **Legacy points.** Sync also asks Qdrant, by point ID, about reviews that must not be indexed but were never indexed by this pipeline, and removes any point found (an older pipeline may have left one under the same ID). Points with no `source` payload that match no Postgres review are never deleted automatically; reconcile reports them as out of scope.
 - **Reindex holds the sync lock.** `reindex` takes the per-source advisory lock for the whole rebuild (clear hashes, sync, remove extras, final reconcile). Otherwise a concurrent import and sync could add a point between reconcile's Postgres read and its Qdrant listing, and reindex would delete it as an "extra" while Postgres still recorded it as indexed. A concurrent ingest simply waits.
+- **Conventions for later changes (no code yet).**
+  - *Property identity.* `properties.location_id` is unique without a source, which is fine for the Google import. Before a second provider is added, add `property_sources(property_id, source, external_location_id)` with `UNIQUE (source, external_location_id)` (backfill it from `properties`), so one hotel can carry several provider IDs. Until then a second provider's different ID for the same hotel fails loudly on the unique name index instead of creating a silent duplicate.
+  - *Theme identity.* Taxonomy versions version tag sets, not theme definitions, so a theme's slug and meaning must stay stable. A label can be edited. If marketing changes what a theme means (split, merge, redefine), add a new slug and a new `taxonomy_version`; never repurpose an existing slug. Versioned definitions are deferred until the first real taxonomy change.
+  - *Import tracking.* `last_import_id` is nullable for backfills; the missing-review queries use `IS DISTINCT FROM`, so a row with no import counts as not seen.
 
 ## Open questions
 

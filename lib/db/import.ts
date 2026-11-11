@@ -159,9 +159,11 @@ async function importProperty(
     }
 
     if (complete) {
+      // IS DISTINCT FROM, not <>: a row with no import (a backfill) was not seen in this
+      // import either, and <> would skip it because NULL <> x is NULL.
       const missing = await client.query<{ source_review_id: string }>(
         `SELECT source_review_id FROM reviews
-         WHERE source = $1 AND property_id = $2 AND deleted_at IS NULL AND last_import_id <> $3
+         WHERE source = $1 AND property_id = $2 AND deleted_at IS NULL AND last_import_id IS DISTINCT FROM $3
          ORDER BY source_review_id`,
         [source, propertyId, importId],
       );
@@ -169,7 +171,7 @@ async function importProperty(
       if (opts.apply && result.missing.length > 0) {
         const del = await client.query(
           `UPDATE reviews SET deleted_at = now()
-           WHERE source = $1 AND property_id = $2 AND deleted_at IS NULL AND last_import_id <> $3`,
+           WHERE source = $1 AND property_id = $2 AND deleted_at IS NULL AND last_import_id IS DISTINCT FROM $3`,
           [source, propertyId, importId],
         );
         result.deleted = del.rowCount ?? 0;

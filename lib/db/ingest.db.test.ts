@@ -112,6 +112,15 @@ describe.skipIf(!url)("ingest (database)", () => {
     expect(await q("SELECT 1 FROM reviews WHERE deleted_at IS NULL")).toHaveLength(1);
   });
 
+  it("a review with no recorded import counts as missing from a complete snapshot", async () => {
+    await importLocations(c, [lodge(full)]);
+    await q("UPDATE reviews SET last_import_id = NULL WHERE source_review_id = 'r3'"); // e.g. a backfill
+    const preview = await importLocations(c, [lodge([review("r1"), review("r2")])], { completeSnapshot: true });
+    expect(preview[0].missing).toEqual(["r3"]);
+    const applied = await importLocations(c, [lodge([review("r1"), review("r2")])], { completeSnapshot: true, apply: true });
+    expect(applied[0].deleted).toBe(1);
+  });
+
   it("deletion is scoped to the property and source of the snapshot", async () => {
     const other: LocationReviews = { ...lodge([review("o1")]), locationId: "loc-b", propertyName: "Other Place" };
     await importLocations(c, [lodge(full), other]);
