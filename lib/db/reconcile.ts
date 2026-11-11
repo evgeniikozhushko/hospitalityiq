@@ -92,7 +92,30 @@ export async function reindex(
     const sync = await syncIndex(client, index, embed, source);
 
     const before = await reconcile(client, index, source);
-    if (before.extra.length > 0) await index.remove(before.extra);
+    if (before.extra.length > 0) {
+      // Invalidate the hashes of Postgres reviews whose point is about to go, BEFORE
+      // removing it. A review soft-deleted by a concurrent import still carries its
+      // hashes; if they survived the removal and the review were later restored
+      // unchanged, sync would see matching hashes and never re-index it. Clearing
+      // first is retry-safe: if the removal fails, the row has NULL hashes and the
+      // never-indexed path in syncIndex checks Qdrant and removes the point next run.
+      const extraIds = new Set(before.extra);
+      const hashed = await client.query<{ id: string; source_review_id: string }>(
+        `SELECT id, source_review_id FROM reviews
+         WHERE source = $1 AND (indexed_text_hash IS NOT NULL OR indexed_payload_hash IS NOT NULL)`,
+        [source],
+      );
+      const stale = hashed.rows
+        .filter((r) => extraIds.has(pointIdForReview(source, r.source_review_id)))
+        .map((r) => r.id);
+      if (stale.length > 0) {
+        await client.query(
+          "UPDATE reviews SET indexed_text_hash = NULL, indexed_payload_hash = NULL WHERE id = ANY($1::bigint[])",
+          [stale],
+        );
+      }
+      await index.remove(before.extra);
+    }
 
     return { sync, extraRemoved: before.extra.length, reconcile: await reconcile(client, index, source) };
   } finally {

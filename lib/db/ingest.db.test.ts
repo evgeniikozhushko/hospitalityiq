@@ -364,6 +364,61 @@ describe.skipIf(!url)("ingest (database)", () => {
     expect((await reconcile(c, index, SRC)).ok).toBe(true);
   });
 
+  it("a review soft-deleted during reindex and later restored is indexed again", async () => {
+    await importLocations(c, [lodge(full)]);
+    await syncIndex(c, index, embed, SRC);
+
+    const other = new Client({ connectionString: url! });
+    await other.connect();
+    let fired = false;
+    const realUpsert = index.upsert.bind(index);
+    // After reindex writes its points, a concurrent import soft-deletes r1 (imports are not locked).
+    index.upsert = async (points) => {
+      await realUpsert(points);
+      if (!fired) {
+        fired = true;
+        await importLocations(other, [lodge([review("r2"), review("r3")])], { completeSnapshot: true, apply: true });
+      }
+    };
+
+    const rep = await reindex(c, index, embed, SRC);
+    expect(rep.extraRemoved).toBe(1); // r1's point was removed as an extra
+    index.upsert = realUpsert;
+
+    // r1 comes back with unchanged content.
+    await importLocations(other, [lodge(full)]);
+    await other.end();
+    const next = await syncIndex(c, index, embed, SRC);
+    expect(next.embedded).toBe(1);
+    expect(index.points.has(pointIdForReview(SRC, "r1"))).toBe(true);
+    expect((await reconcile(c, index, SRC)).ok).toBe(true);
+  });
+
+  it("if reindex fails removing an extra point, the next sync still removes it", async () => {
+    await importLocations(c, [lodge(full)]);
+    await syncIndex(c, index, embed, SRC);
+    const other = new Client({ connectionString: url! });
+    await other.connect();
+    let fired = false;
+    const realUpsert = index.upsert.bind(index);
+    index.upsert = async (points) => {
+      await realUpsert(points);
+      if (!fired) {
+        fired = true;
+        await importLocations(other, [lodge([review("r2"), review("r3")])], { completeSnapshot: true, apply: true });
+        index.failRemove = true; // the extra-point removal that follows will fail
+      }
+    };
+    await expect(reindex(c, index, embed, SRC)).rejects.toThrow("qdrant down");
+    await other.end();
+    index.upsert = realUpsert;
+    index.failRemove = false;
+
+    expect(index.points.has(pointIdForReview(SRC, "r1"))).toBe(true); // still there, but r1 is deleted
+    expect((await syncIndex(c, index, embed, SRC)).removed).toBe(1);
+    expect(index.points.has(pointIdForReview(SRC, "r1"))).toBe(false);
+  });
+
   it("reindex keeps the removal signal for soft-deleted reviews whose point removal fails", async () => {
     await importLocations(c, [lodge(full)]);
     await syncIndex(c, index, embed, SRC);
