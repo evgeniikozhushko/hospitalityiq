@@ -39,7 +39,7 @@ How many reviews in scope have text, have up-to-date tags, have outdated tags or
 ## Answers
 
 **Count**:
-An exact number of mentions, computed over every tagged review in scope.
+An exact number of mentions, computed over every review in scope that has current tags. Reviews with outdated tags are not counted; they show up in coverage.
 _Avoid_: Estimate, tally (for sampled numbers)
 
 **Sample**:
