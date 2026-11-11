@@ -174,11 +174,12 @@ Value is measured as hours saved × hourly cost (illustration: 5 h/week at $35/h
 - Eval harness: `evals/dataset.json` (21 labelled cases), `scripts/eval.ts` (`npm run eval`), `lib/evalMetrics.ts` + tests, `lib/evalJudge.ts`; first numbers in `evals/baseline.json`
 - `evals/test-questions.md`: original draft questions (superseded by `dataset.json`)
 - `docs/gbp-api-access.md`: API access checklist
+- Postgres foundation (local, Docker Compose): plain-SQL migrations, read-only role, `reviews` / `review_tagging` / `review_themes`, Postgres-first ingest with Qdrant sync, `reconcile` / `reindex`, and fixed parameterized statistics queries (`lib/reviewStats.ts`, `npm run stats`). Tags are provisional hand tags and synthetic practice data. Design and as-built differences: `docs/sql-plan.md`
 
 **Next**
 1. Fix what the eval baseline found (see `evals/baseline.json`), then re-baseline on real reviews
 2. Theme taxonomy, agreed with marketing
-3. Postgres data model
+3. Route count and trend questions to the SQL statistics (router + planner filters), then AI theme tagging validated against a hand-labelled set
 4. Qdrant collection redesign with named dense + sparse vectors
 5. Router schema (route + extracted filters)
 6. Re-label the eval dataset against real reviews when they arrive (current labels use 8 fictional reviews)

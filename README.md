@@ -79,7 +79,7 @@ Integration tests use the disposable instance and are skipped unless `DATABASE_U
 
 ## Status
 
-Dense-only retrieval, cited answers (`npm run ask`) and an eval harness (`npm run eval`) work. Next up: fixing what the eval baseline found, theme taxonomy, Postgres data model, and hybrid (dense + sparse) search. The full status and roadmap are in [section 12 of the project scope](docs/project-scope.md#12-current-build-status).
+Dense-only retrieval, cited answers (`npm run ask`) and an eval harness (`npm run eval`) work. The local Postgres foundation (exact review counts and trends via `npm run stats`) is in place. Next up: routing count and trend questions to it, AI theme tagging, fixing what the eval baseline found, theme taxonomy, and hybrid (dense + sparse) search. The full status and roadmap are in [section 12 of the project scope](docs/project-scope.md#12-current-build-status).
 
 ## Data protection
 
