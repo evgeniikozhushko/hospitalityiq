@@ -162,6 +162,7 @@ Differences from the plan above, all deliberate:
 - **Statistics** return per-property rows plus a total, each with the five coverage numbers, and a trend reports `percent: null` when the previous period had no mentions.
 - **Payload refresh replaces, not merges.** A metadata refresh uses Qdrant `overwrite_payload`; `set_payload` merges, so a removed field (e.g. an owner reply) would stay searchable. `npm run reindex` heals any point refreshed before this fix.
 - **Legacy points.** Sync also asks Qdrant, by point ID, about reviews that must not be indexed but were never indexed by this pipeline, and removes any point found (an older pipeline may have left one under the same ID). Points with no `source` payload that match no Postgres review are never deleted automatically; reconcile reports them as out of scope.
+- **Reindex holds the sync lock.** `reindex` takes the per-source advisory lock for the whole rebuild (clear hashes, sync, remove extras, final reconcile). Otherwise a concurrent import and sync could add a point between reconcile's Postgres read and its Qdrant listing, and reindex would delete it as an "extra" while Postgres still recorded it as indexed. A concurrent ingest simply waits.
 
 ## Open questions
 

@@ -325,6 +325,36 @@ describe.skipIf(!url)("ingest (database)", () => {
     expect(index.points.has(pointIdForReview(SRC, "r1"))).toBe(true);
   });
 
+  it("reindex holds the sync lock, so a concurrent import and sync is not deleted as an extra", async () => {
+    await importLocations(c, [lodge(full)]);
+    await syncIndex(c, index, embed, SRC);
+
+    const other = new Client({ connectionString: url! });
+    await other.connect();
+    let concurrent: Promise<unknown> | undefined;
+    let fired = false;
+    const realList = index.listPoints.bind(index);
+    // Fires once, after reindex has read Postgres but before it lists Qdrant.
+    index.listPoints = async () => {
+      if (!fired) {
+        fired = true;
+        await importLocations(other, [lodge([...full, review("r4")])]);
+        concurrent = syncIndex(other, index, embed, SRC);
+        // Unlocked, this sync finishes here and the point exists when Qdrant is listed.
+        await Promise.race([concurrent, new Promise((r) => setTimeout(r, 400))]);
+      }
+      return realList();
+    };
+
+    const rep = await reindex(c, index, embed, SRC);
+    expect(rep.extraRemoved).toBe(0);
+    await concurrent; // waited on the lock, ran after the rebuild
+    await other.end();
+
+    expect(index.points.has(pointIdForReview(SRC, "r4"))).toBe(true);
+    expect((await reconcile(c, index, SRC)).ok).toBe(true);
+  });
+
   it("reindex keeps the removal signal for soft-deleted reviews whose point removal fails", async () => {
     await importLocations(c, [lodge(full)]);
     await syncIndex(c, index, embed, SRC);

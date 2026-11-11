@@ -7,7 +7,7 @@ import type { Client } from "pg";
 import { pointIdForReview } from "../pointId";
 import { INDEXABLE_SQL } from "./payload";
 import type { Embed, VectorIndex } from "./vectorIndex";
-import { syncIndex, type SyncReport } from "./qdrantSync";
+import { syncIndex, syncLockKey, type SyncReport } from "./qdrantSync";
 
 export type ReconcileReport = {
   source: string;
@@ -69,6 +69,12 @@ export type ReindexReport = { sync: SyncReport; extraRemoved: number; reconcile:
  * indexable reviews (they re-embed); soft-deleted / text-free reviews keep theirs
  * because that is the signal their points still need removing, which sync does.
  * Extra points are deleted only when their payload source is this source.
+ *
+ * The per-source sync lock is held for the whole operation. Without it, a sync
+ * that adds a point after reconcile reads Postgres but before it lists Qdrant
+ * would look like an "extra" point and be deleted while Postgres still records
+ * it as indexed. (The lock is session-level and re-entrant, so the nested lock
+ * inside syncIndex is fine.)
  */
 export async function reindex(
   client: Client,
@@ -76,15 +82,20 @@ export async function reindex(
   embed: Embed,
   source: string,
 ): Promise<ReindexReport> {
-  await client.query(
-    `UPDATE reviews r SET indexed_text_hash = NULL, indexed_payload_hash = NULL
-     WHERE r.source = $1 AND ${INDEXABLE_SQL}`,
-    [source],
-  );
-  const sync = await syncIndex(client, index, embed, source);
+  await client.query("SELECT pg_advisory_lock(hashtext($1))", [syncLockKey(source)]);
+  try {
+    await client.query(
+      `UPDATE reviews r SET indexed_text_hash = NULL, indexed_payload_hash = NULL
+       WHERE r.source = $1 AND ${INDEXABLE_SQL}`,
+      [source],
+    );
+    const sync = await syncIndex(client, index, embed, source);
 
-  const before = await reconcile(client, index, source);
-  if (before.extra.length > 0) await index.remove(before.extra);
+    const before = await reconcile(client, index, source);
+    if (before.extra.length > 0) await index.remove(before.extra);
 
-  return { sync, extraRemoved: before.extra.length, reconcile: await reconcile(client, index, source) };
+    return { sync, extraRemoved: before.extra.length, reconcile: await reconcile(client, index, source) };
+  } finally {
+    await client.query("SELECT pg_advisory_unlock(hashtext($1))", [syncLockKey(source)]);
+  }
 }

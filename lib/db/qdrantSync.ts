@@ -35,6 +35,9 @@ type DbIndexRow = IndexRow & {
 
 const BATCH = 100;
 
+/** Advisory-lock key shared by sync and reindex so they never overlap for a source. */
+export const syncLockKey = (source: string) => `sync:${source}`;
+
 export async function syncIndex(
   client: Client,
   index: VectorIndex,
@@ -43,7 +46,7 @@ export async function syncIndex(
 ): Promise<SyncReport> {
   const report: SyncReport = { removed: 0, embedded: 0, payloadRefreshed: 0 };
   // Only one sync per source at a time.
-  await client.query("SELECT pg_advisory_lock(hashtext($1))", [`sync:${source}`]);
+  await client.query("SELECT pg_advisory_lock(hashtext($1))", [syncLockKey(source)]);
   try {
     // 1. Removals: soft-deleted / text-free / rating-less reviews that still have a point.
     const gone = await client.query<{ id: string; source_review_id: string }>(
@@ -118,7 +121,7 @@ export async function syncIndex(
     }
     return report;
   } finally {
-    await client.query("SELECT pg_advisory_unlock(hashtext($1))", [`sync:${source}`]);
+    await client.query("SELECT pg_advisory_unlock(hashtext($1))", [syncLockKey(source)]);
   }
 }
 
