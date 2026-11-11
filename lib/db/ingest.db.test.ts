@@ -189,6 +189,62 @@ describe.skipIf(!url)("ingest (database)", () => {
     expect(index.points.get(pointIdForReview(SRC, "r1"))!.payload.rating).toBe(2);
   });
 
+  it("a removed owner reply disappears from the point, and a changed one updates", async () => {
+    const withReply = (text: string) => ({ reviewReply: { comment: text, updateTime: "2026-01-15T10:00:00Z" } });
+    const id = pointIdForReview(SRC, "r1");
+    await importLocations(c, [lodge([review("r1", withReply("Thanks for staying"))])]);
+    await syncIndex(c, index, embed, SRC);
+    expect(index.points.get(id)!.payload.ownerReply).toBe("Thanks for staying");
+
+    await importLocations(c, [lodge([review("r1", withReply("Updated reply"))])]);
+    expect(await syncIndex(c, index, embed, SRC)).toMatchObject({ embedded: 0, payloadRefreshed: 1 });
+    expect(index.points.get(id)!.payload.ownerReply).toBe("Updated reply");
+
+    await importLocations(c, [lodge([review("r1")])]);
+    expect(await syncIndex(c, index, embed, SRC)).toMatchObject({ embedded: 0, payloadRefreshed: 1 });
+    expect("ownerReply" in index.points.get(id)!.payload).toBe(false);
+    expect((await reconcile(c, index, SRC)).ok).toBe(true);
+  });
+
+  it("removes a point an older pipeline left for a review that must not be indexed", async () => {
+    const legacy = (id: string) =>
+      index.points.set(pointIdForReview(SRC, id), {
+        id: pointIdForReview(SRC, id),
+        vector: [0, 0],
+        payload: { reviewId: id, source: SRC, text: "old" },
+      });
+    legacy("r1");
+    legacy("r2");
+    legacy("other"); // no Postgres row: not this sync's business
+    // r1 becomes text-free, r2 stays indexable; first ever import, so no indexed hash exists.
+    await importLocations(c, [lodge([review("r1", { comment: undefined }), review("r2")])]);
+
+    const first = await syncIndex(c, index, embed, SRC);
+    expect(first.removed).toBe(1);
+    expect(index.points.has(pointIdForReview(SRC, "r1"))).toBe(false);
+    expect(index.points.has(pointIdForReview(SRC, "r2"))).toBe(true);
+    expect(index.points.has(pointIdForReview(SRC, "other"))).toBe(true);
+
+    const removeCalls = index.calls.remove;
+    expect((await syncIndex(c, index, embed, SRC)).removed).toBe(0);
+    expect(index.calls.remove).toBe(removeCalls); // nothing left to remove: no delete issued
+  });
+
+  it("retries removing a never-indexed review's point after a Qdrant failure", async () => {
+    index.points.set(pointIdForReview(SRC, "r1"), {
+      id: pointIdForReview(SRC, "r1"),
+      vector: [0, 0],
+      payload: { reviewId: "r1", source: SRC },
+    });
+    await importLocations(c, [lodge([review("r1", { comment: undefined })])]);
+    index.failRemove = true;
+    await expect(syncIndex(c, index, embed, SRC)).rejects.toThrow("qdrant down");
+    expect(index.points.size).toBe(1);
+    index.failRemove = false;
+    expect((await syncIndex(c, index, embed, SRC)).removed).toBe(1);
+    expect(index.points.size).toBe(0);
+  });
+
   it("a property rename refreshes every review's payload", async () => {
     await importLocations(c, [lodge(full)]);
     await syncIndex(c, index, embed, SRC);

@@ -11,6 +11,8 @@
  *  - a property rename or rating change refreshes the payload without re-embedding.
  * Pending removals are derived from the row, not queued: a point exists while
  * indexed_text_hash is set, and the row is soft-deleted, text-free or rating-less.
+ * A row that was never indexed here is also checked against Qdrant by point ID,
+ * since an older pipeline may have left a point under the same ID.
  */
 import type { Client } from "pg";
 import { pointIdForReview } from "../pointId";
@@ -59,6 +61,25 @@ export async function syncIndex(
       report.removed += batch.length;
     }
 
+    // 1b. Rows this pipeline never indexed (hash NULL) can still have a point: one
+    //     written by the old ingest under the same ID. Postgres says it must not be
+    //     searchable, so ask Qdrant and remove whichever exist. Idempotent.
+    const never = await client.query<{ source_review_id: string }>(
+      `SELECT r.source_review_id FROM reviews r
+       WHERE r.source = $1 AND r.indexed_text_hash IS NULL AND ${NOT_INDEXABLE_SQL}`,
+      [source],
+    );
+    for (let i = 0; i < never.rows.length; i += BATCH) {
+      const ids = never.rows
+        .slice(i, i + BATCH)
+        .map((r) => pointIdForReview(source, r.source_review_id));
+      const present = await index.existing(ids);
+      if (present.length > 0) {
+        await index.remove(present);
+        report.removed += present.length;
+      }
+    }
+
     // 2. Embed + upsert reviews whose text changed (or were never indexed), and
     //    refresh the payload of those whose metadata changed.
     const { rows } = await client.query<DbIndexRow>(INDEX_ROWS_SQL, [source]);
@@ -86,7 +107,7 @@ export async function syncIndex(
 
     for (let i = 0; i < toRefresh.length; i += BATCH) {
       const batch = toRefresh.slice(i, i + BATCH);
-      await index.setPayload(
+      await index.overwritePayload(
         batch.map((b) => ({
           id: pointIdForReview(source, b.row.source_review_id),
           payload: buildPayload(b.row),

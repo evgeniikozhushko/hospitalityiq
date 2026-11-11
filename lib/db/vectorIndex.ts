@@ -12,7 +12,10 @@ export type StoredPoint = {
 
 export interface VectorIndex {
   upsert(points: IndexPoint[]): Promise<void>;
-  setPayload(items: { id: string; payload: Record<string, unknown> }[]): Promise<void>;
+  /** REPLACES each point's whole payload (a removed field must disappear), keeping its vector. */
+  overwritePayload(items: { id: string; payload: Record<string, unknown> }[]): Promise<void>;
+  /** Which of these point IDs exist in the collection. */
+  existing(ids: string[]): Promise<string[]>;
   remove(ids: string[]): Promise<void>;
   /** Every point in the collection (payload fields above only). */
   listPoints(): Promise<StoredPoint[]>;

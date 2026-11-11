@@ -10,12 +10,20 @@ export const qdrantIndex: VectorIndex = {
     });
   },
 
-  async setPayload(items) {
+  // overwrite_payload, not set_payload: set_payload merges, so a field removed in
+  // Postgres (e.g. an owner reply) would stay searchable.
+  async overwritePayload(items) {
     if (items.length === 0) return;
     await qdrant.batchUpdate(COLLECTION, {
       wait: true,
-      operations: items.map((it) => ({ set_payload: { payload: it.payload, points: [it.id] } })),
+      operations: items.map((it) => ({ overwrite_payload: { payload: it.payload, points: [it.id] } })),
     });
+  },
+
+  async existing(ids) {
+    if (ids.length === 0) return [];
+    const found = await qdrant.retrieve(COLLECTION, { ids, with_payload: false, with_vector: false });
+    return found.map((p) => String(p.id));
   },
 
   async remove(ids) {

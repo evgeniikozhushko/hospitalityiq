@@ -5,19 +5,22 @@ export class FakeIndex implements VectorIndex {
   points = new Map<string, IndexPoint>();
   failUpsert = false;
   failRemove = false;
-  calls = { upsert: 0, setPayload: 0, remove: 0 };
+  calls = { upsert: 0, overwritePayload: 0, remove: 0 };
 
   async upsert(points: IndexPoint[]) {
     this.calls.upsert++;
     if (this.failUpsert) throw new Error("qdrant down");
     for (const p of points) this.points.set(p.id, { ...p, payload: { ...p.payload } });
   }
-  async setPayload(items: { id: string; payload: Record<string, unknown> }[]) {
-    this.calls.setPayload++;
+  async overwritePayload(items: { id: string; payload: Record<string, unknown> }[]) {
+    this.calls.overwritePayload++;
     for (const it of items) {
       const p = this.points.get(it.id);
-      if (p) p.payload = { ...p.payload, ...it.payload };
+      if (p) p.payload = { ...it.payload };
     }
+  }
+  async existing(ids: string[]) {
+    return ids.filter((id) => this.points.has(id));
   }
   async remove(ids: string[]) {
     this.calls.remove++;

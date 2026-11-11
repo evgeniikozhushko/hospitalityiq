@@ -160,6 +160,8 @@ Differences from the plan above, all deliberate:
 - **Test config.** `vitest.config.mts` turns off file parallelism because database test files share one disposable instance.
 - **Timezone.** `properties.timezone` defaults to `America/Edmonton`; there is no ingest field for it yet, so set it with SQL for a property elsewhere.
 - **Statistics** return per-property rows plus a total, each with the five coverage numbers, and a trend reports `percent: null` when the previous period had no mentions.
+- **Payload refresh replaces, not merges.** A metadata refresh uses Qdrant `overwrite_payload`; `set_payload` merges, so a removed field (e.g. an owner reply) would stay searchable. `npm run reindex` heals any point refreshed before this fix.
+- **Legacy points.** Sync also asks Qdrant, by point ID, about reviews that must not be indexed but were never indexed by this pipeline, and removes any point found (an older pipeline may have left one under the same ID). Points with no `source` payload that match no Postgres review are never deleted automatically; reconcile reports them as out of scope.
 
 ## Open questions
 
