@@ -180,7 +180,10 @@ function renderRanking(o: Extract<StatsOutcome, { kind: "ranking" }>, ctx: Rende
     };
   }
   if (r.themes.length === 0) {
-    blocks.push(`None of the ${taggedReviews(c.currentTagged)} mention a listed theme.`);
+    // Worded by sentiment: an empty complaint ranking must not read as "no mentions".
+    blocks.push(
+      `None of the ${taggedReviews(c.currentTagged)} ${verbPhrase(c.currentTagged, "a listed theme", r.sentiment)}.`,
+    );
   } else {
     blocks.push(
       r.themes
@@ -222,7 +225,9 @@ function renderTrend(o: Extract<StatsOutcome, { kind: "trend" }>, ctx: RenderCon
       `Change: ${sign}${abs} ${plural(abs, "mention", "mentions")} (${sign}${percent(Math.abs(r.change.percent))}).`,
     );
   }
-  return { blocks, followUp: followUp(label) };
+  // Nothing to follow up when neither period has a single tagged review.
+  const counted = r.current.total.coverage.currentTagged > 0 || r.previous.total.coverage.currentTagged > 0;
+  return { blocks, followUp: counted ? followUp(label) : null };
 }
 
 /**

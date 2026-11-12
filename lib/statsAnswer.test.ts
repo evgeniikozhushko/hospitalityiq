@@ -204,6 +204,23 @@ describe("renderStats: ranking", () => {
   it("says so when tagged reviews mention no listed theme", () => {
     expect(ranking({ themes: [] })).toContain("None of the 8 tagged reviews mention a listed theme.");
   });
+
+  it("words an empty ranking by its sentiment, so praise is not reported as no mention", () => {
+    // Tagged reviews praise Parking but contain no complaints: the complaint ranking is empty.
+    const complaints = ranking({ sentiment: "negative", themes: [] });
+    expect(complaints).toContain("None of the 8 tagged reviews complain about a listed theme.");
+    expect(complaints).not.toMatch(/mention a listed theme/);
+    expect(ranking({ sentiment: "positive", themes: [] })).toContain("None of the 8 tagged reviews praise a listed theme.");
+    expect(ranking({ sentiment: "neutral", themes: [] })).toContain(
+      "None of the 8 tagged reviews mention a listed theme neutrally.",
+    );
+  });
+
+  it("agrees in number for an empty ranking over one tagged review", () => {
+    expect(
+      ranking({ sentiment: "negative", themes: [], coverage: cov({ totalReviews: 1, textReviews: 1, currentTagged: 1 }) }),
+    ).toContain("None of the 1 tagged review complains about a listed theme.");
+  });
 });
 
 describe("renderStats: trend", () => {
@@ -211,12 +228,28 @@ describe("renderStats: trend", () => {
     ...mentionsResult({ theme: "front-desk", total: { count, coverage: cov(c) } }),
     window: { since, until },
   });
-  const trend = (current: number, previous: number, percent: number | null = null) => {
+  const trend = (
+    current: number,
+    previous: number,
+    percent: number | null = null,
+    coverage: { current?: Partial<Coverage>; previous?: Partial<Coverage> } = {},
+  ) => {
     const t: ThemeTrend = {
       theme: "front-desk",
       sentiment: null,
-      current: period("2025-11-11", "2026-11-10", current, { totalReviews: 40, textReviews: 40, currentTagged: 40 }),
-      previous: period("2024-11-11", "2025-11-10", previous, { totalReviews: 30, textReviews: 30, currentTagged: 25, untagged: 5 }),
+      current: period("2025-11-11", "2026-11-10", current, {
+        totalReviews: 40,
+        textReviews: 40,
+        currentTagged: 40,
+        ...coverage.current,
+      }),
+      previous: period("2024-11-11", "2025-11-10", previous, {
+        totalReviews: 30,
+        textReviews: 30,
+        currentTagged: 25,
+        untagged: 5,
+        ...coverage.previous,
+      }),
       change: { absolute: current - previous, percent },
     };
     return renderStats(
@@ -258,6 +291,20 @@ describe("renderStats: trend", () => {
     expect(trend(15, 10, 50)).toContain("Change: +5 mentions (+50%).");
     expect(trend(10, 15, -33.33)).toContain("Change: -5 mentions (-33%).");
     expect(trend(10, 10, 0)).toContain("Change: no change (0%).");
+  });
+
+  it("leaves out the follow-up when neither period has tagged reviews", () => {
+    const untagged = { currentTagged: 0, untagged: 40 };
+    const text = trend(0, 0, null, { current: untagged, previous: { ...untagged, totalReviews: 30, textReviews: 30, untagged: 30 } });
+    expect(text).toContain("None of the 40 reviews in scope are tagged yet");
+    expect(text).toContain("None of the 30 reviews in scope are tagged yet");
+    expect(text).not.toMatch(/ask:/);
+  });
+
+  it("keeps the follow-up when either period has tagged reviews, even with zero mentions", () => {
+    const none = { currentTagged: 0, untagged: 40 };
+    expect(trend(0, 0, null, { current: none })).toMatch(/ask: "What do guests say about front desk\?"$/);
+    expect(trend(0, 0, null, { previous: { currentTagged: 0, untagged: 30 } })).toMatch(/ask:/);
   });
 });
 
