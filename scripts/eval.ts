@@ -1,40 +1,61 @@
 /**
  * Run the eval dataset through the real pipeline (answerQuestion) and score it.
  *
- * Usage: npm run eval -- [--runs 3] [--only q01,q05] [--judge] [--baseline] [--no-fail]
- *   --runs N     repeat each question N times (planner and answerer are non-deterministic)
- *   --only ids   run a subset
- *   --judge      also grade groundedness with an LLM (acknowledgement checks always use it)
- *   --baseline   write the results to evals/baseline.json (committed) as well
- *   --no-fail    always exit 0
+ * Usage: npm run eval -- [--runs 3] [--only q01,q05] [--judge] [--baseline name] [--no-fail]
+ *   --runs N         repeat each question N times (planner and answerer are non-deterministic)
+ *   --only ids       run a subset
+ *   --judge          also grade groundedness and sample figures stated as counts with an LLM
+ *                    (acknowledgement checks always use it)
+ *   --baseline name  also save the results as evals/baselines/<name>.json (never overwrites)
+ *   --no-fail        always exit 0
+ *
+ * Cases are reported in three groups (docs/routing-plan.md, Eval), so a statistics win
+ * cannot hide a retrieval regression:
+ *   regression  scored exactly as before, compared case by case with REGRESSION_BASELINE
+ *   statistics  path and exact numbers (hand-computed from data/manual-tags.json)
+ *   boundary    path only: questions that must stay on retrieval or fall back honestly
+ * A case passes only when it passes every run.
  * Needs local Qdrant with data ingested (npm run ingest). LangSmith is optional.
  */
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { answerQuestion } from "../lib/answer";
 import { env } from "../lib/env";
-import { judgeAcknowledges, judgeGrounded } from "../lib/evalJudge";
+import { judgeAcknowledges, judgeGrounded, judgeNoSampleCounts, type JudgeResult } from "../lib/evalJudge";
 import {
   checkCitations,
   checkTargets,
+  compareToBaseline,
   filterMismatches,
   forbiddenHits,
   kFor,
   leakedNames,
   mean,
+  missingText,
   outcomeOf,
+  pathOf,
   recallAtK,
   reciprocalRank,
   sourcesCorrect,
+  splitNote,
   unmatchedQuotes,
   type Outcome,
+  type Path,
   type RunTrace,
 } from "../lib/evalMetrics";
-import type { QueryFilters } from "../lib/schema";
+import type { PlannerOutput, QueryFilters } from "../lib/schema";
+
+/** The run the regression group is compared with (committed, never overwritten). */
+const REGRESSION_BASELINE = "evals/baselines/pre-statistics-routing.json";
+/** A known judge miss unrelated to routing, reported apart from the regression check. */
+const REPORT_SEPARATELY = ["q05"];
+
+type Group = "regression" | "statistics" | "boundary";
 
 type Case = {
   id: string;
-  type: "retrieval" | "generative" | "behavior";
+  group: Group;
+  type: "retrieval" | "generative" | "behavior" | "statistics";
   question: string;
   expectedOutcome: Outcome;
   expectedMode?: "specific" | "aggregate";
@@ -44,6 +65,10 @@ type Case = {
   expectDroppedProperty?: boolean;
   mustAcknowledge?: string;
   mustNotContain?: string[];
+  /** The path the question must take (statistics and boundary groups). */
+  expectedPath?: Path;
+  /** Exact snippets the answer must contain: hand-computed numbers or fixed notes. */
+  mustContain?: string[];
   notes?: string;
 };
 
@@ -51,6 +76,7 @@ type Check = { name: string; pass: boolean | null; detail?: string };
 type RunResult = {
   caseId: string;
   outcome: Outcome;
+  path: Path | null;
   mode: string | null;
   retrievedIds: string[];
   recall: number;
@@ -58,6 +84,8 @@ type RunResult = {
   sourcesOk: boolean | null;
   checks: Check[];
   pass: boolean;
+  /** Judge: does a sample-based answer state a figure as a count? Reported, not part of pass. */
+  sampleCount: JudgeResult | null;
   answer: string;
   seconds: number;
 };
@@ -69,6 +97,19 @@ const opt = (n: string) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 const RUNS = Number(opt("runs") ?? 1);
+
+/** Where --baseline saves, checked before any (paid) run starts. */
+function baselinePath(): string | null {
+  if (!flag("baseline")) return null;
+  const name = opt("baseline");
+  if (!name || !/^[a-z0-9-]+$/.test(name)) {
+    throw new Error("--baseline needs a name of lowercase letters, digits and dashes, e.g. --baseline post-statistics-routing");
+  }
+  const file = `evals/baselines/${name}.json`;
+  if (existsSync(file)) throw new Error(`${file} exists; saved baselines are never overwritten.`);
+  return file;
+}
+const baselineFile = baselinePath();
 
 const datasetRaw = readFileSync("evals/dataset.json", "utf8");
 const dataset = JSON.parse(datasetRaw) as { today: string; cases: Case[] };
@@ -93,15 +134,20 @@ async function collect(question: string): Promise<RunTrace> {
     relaxed: false,
     sources: [],
     answer: "",
+    planRoute: null,
+    statsKind: null,
   };
   for await (const e of answerQuestion(question, { today: dataset.today })) {
     if (e.type === "plan") {
+      // The pipeline sends the full planner output, route included.
+      t.planRoute = (e.plan as Partial<PlannerOutput>).route ?? null;
       t.intent = e.plan.intent;
       t.mode = e.plan.mode;
       t.filters = e.plan.filters;
       t.droppedPropertyNames = e.droppedPropertyNames;
     } else if (e.type === "declined") t.declinedIntent = e.intent;
     else if (e.type === "no_data") t.noData = true;
+    else if (e.type === "stats") t.statsKind = e.outcome.kind;
     else if (e.type === "sources") {
       t.sources = e.sources;
       t.relaxed = e.relaxed;
@@ -125,7 +171,14 @@ async function runCase(c: Case): Promise<RunResult> {
     checks.push({ name, pass, detail });
 
   const outcome = outcomeOf(t);
+  const path = pathOf(t);
+  // Checks on model output never grade the code-written fallback note or count text.
+  const { modelText } = splitNote(t.answer);
+  const modelAnswered = path === "retrieval" || path === "fallback";
   add("outcome", outcome === c.expectedOutcome, `got ${outcome}, want ${c.expectedOutcome}`);
+  if (c.expectedPath) add("path", path === c.expectedPath, `got ${path}, want ${c.expectedPath}`);
+  const missing = missingText(t.answer, c.mustContain);
+  if (c.mustContain) add("exact text", missing.length === 0, `missing: ${missing.join(" | ")}`);
   if (c.expectedMode) add("mode", t.mode === c.expectedMode, `got ${t.mode}`);
 
   const bad = filterMismatches(t.filters, c.expectedFilters);
@@ -143,21 +196,25 @@ async function runCase(c: Case): Promise<RunResult> {
   const sourcesOk = relevant.length ? sourcesCorrect(retrievedIds, relevant, k) : null;
   if (sourcesOk !== null) add("sources", sourcesOk, `recall=${recall.toFixed(2)} k=${k}`);
 
-  if (outcome === "answered") {
-    const cit = checkCitations(t.answer, t.sources.length, relevant.length > 0 && !c.mustAcknowledge);
+  let sampleCount: JudgeResult | null = null;
+  if (outcome === "answered" && modelAnswered) {
+    const cit = checkCitations(modelText, t.sources.length, relevant.length > 0 && !c.mustAcknowledge);
     add("citations", cit.invalid.length === 0 && !cit.missing, cit.missing ? "cites nothing" : `invalid: ${cit.invalid}`);
-    const q = unmatchedQuotes(t.answer, t.sources.map((s) => s.text), c.question);
+    const q = unmatchedQuotes(modelText, t.sources.map((s) => s.text), c.question);
     add("quotes verbatim", q.length === 0, q.join(" | "));
+    if (flag("judge") && t.sources.length) sampleCount = await judgeNoSampleCounts(modelText);
+  }
+  if (outcome === "answered") {
     if (c.mustAcknowledge) {
       const j = await judgeAcknowledges(t.answer, c.mustAcknowledge);
       add("acknowledges limit", j.pass, j.reason);
     }
-    if (flag("judge") && t.sources.length) {
+    if (flag("judge") && modelAnswered && t.sources.length) {
       // Same facts the answer model saw: property, rating and date are legitimate to cite.
       const reviews = t.sources
         .map((s) => `[${s.n}] ${s.propertyName} · ${s.rating}★ · ${s.createdAt.slice(0, 10)}\n${s.text}`)
         .join("\n\n");
-      const j = await judgeGrounded(t.answer, reviews);
+      const j = await judgeGrounded(modelText, reviews);
       add("grounded", j.pass, j.reason);
     }
   }
@@ -169,6 +226,7 @@ async function runCase(c: Case): Promise<RunResult> {
   return {
     caseId: c.id,
     outcome,
+    path,
     mode: t.mode,
     retrievedIds,
     recall,
@@ -176,6 +234,7 @@ async function runCase(c: Case): Promise<RunResult> {
     sourcesOk,
     checks,
     pass: checks.every((x) => x.pass === true),
+    sampleCount,
     answer: t.answer,
     seconds: (Date.now() - started) / 1000,
   };
@@ -201,15 +260,18 @@ async function main() {
       } catch (err) {
         // A pipeline crash is a failed run, not an aborted eval.
         results[c.id].push({
-          caseId: c.id, outcome: "answered", mode: null, retrievedIds: [], recall: NaN, rr: NaN,
+          caseId: c.id, outcome: "answered", path: null, mode: null, retrievedIds: [], recall: NaN, rr: NaN,
           sourcesOk: null, checks: [{ name: "pipeline", pass: false, detail: (err as Error).message }],
-          pass: false, answer: "", seconds: 0,
+          pass: false, sampleCount: null, answer: "", seconds: 0,
         });
       }
     }
     const r = results[c.id];
     const passes = r.filter((x) => x.pass).length;
-    console.log(`${passes === r.length ? "PASS" : "FAIL"} ${c.id} ${passes}/${r.length}  ${c.question.slice(0, 70)}`);
+    const paths = [...new Set(r.map((x) => x.path))].join("/");
+    console.log(
+      `${passes === r.length ? "PASS" : "FAIL"} ${c.id} ${passes}/${r.length}  [${c.group}, ${paths}]  ${c.question.slice(0, 60)}`,
+    );
     for (const x of r) {
       for (const ck of x.checks.filter((y) => y.pass !== true)) {
         console.log(`      - ${ck.name}${ck.pass === null ? " (unknown)" : ""}: ${ck.detail ?? ""}`);
@@ -244,6 +306,51 @@ async function main() {
   }
   const questionsPassed = Object.values(results).filter((r) => r.every((x) => x.pass)).length;
   console.log(`\nQuestions passing all checks: ${questionsPassed}/${cases.length}`);
+
+  // --- The three groups -----------------------------------------------------
+  const inGroup = (g: Group) => cases.filter((c) => c.group === g).map((c) => c.id);
+  const runsOf = (ids: string[]) => ids.flatMap((id) => results[id]);
+  const checkRate = (ids: string[], name: string) => {
+    const cs = runsOf(ids).flatMap((x) => x.checks.filter((c) => c.name === name));
+    return { passed: cs.filter((c) => c.pass === true).length, total: cs.length };
+  };
+  const casesPassing = (ids: string[]) => ids.filter((id) => results[id].every((x) => x.pass)).length;
+
+  const baseline = JSON.parse(readFileSync(REGRESSION_BASELINE, "utf8")) as {
+    results: Record<string, Array<{ pass: boolean }>>;
+  };
+  const regressionIds = inGroup("regression");
+  const regression = compareToBaseline(results, baseline.results, regressionIds, REPORT_SEPARATELY);
+  console.log(`\n1. Regression (${regressionIds.length} cases, compared with ${REGRESSION_BASELINE})`);
+  console.log(`  passing: ${regression.passed.length}/${regression.scored.length}`);
+  console.log(`  regressions: ${regression.regressions.join(", ") || "none"}`);
+  if (regression.improvements.length) console.log(`  improvements: ${regression.improvements.join(", ")}`);
+  for (const s of regression.separate) {
+    console.log(`  ${s.id} (reported separately): ${s.now ? "PASS" : "FAIL"} now, ${s.before ? "PASS" : "FAIL"} before`);
+  }
+  if (regression.notInBaseline.length) console.log(`  not in the saved run: ${regression.notInBaseline.join(", ")}`);
+  const rerouted = regressionIds.filter((id) => results[id].some((x) => x.path !== "retrieval" && x.path !== "declined"));
+  if (rerouted.length) console.log(`  took a statistics path in some run: ${rerouted.join(", ")}`);
+
+  const statsIds = inGroup("statistics");
+  const statsPath = checkRate(statsIds, "path");
+  const exact = checkRate(statsIds, "exact text");
+  console.log(`\n2. Statistics (${statsIds.length} cases): ${casesPassing(statsIds)}/${statsIds.length} passing`);
+  console.log(`  path: ${statsPath.passed}/${statsPath.total} runs   exact numbers: ${exact.passed}/${exact.total} runs`);
+
+  const boundaryIds = inGroup("boundary");
+  const boundaryPath = checkRate(boundaryIds, "path");
+  console.log(`\n3. Boundary and fallback (${boundaryIds.length} cases): ${casesPassing(boundaryIds)}/${boundaryIds.length} passing`);
+  console.log(`  path: ${boundaryPath.passed}/${boundaryPath.total} runs (target: all)`);
+
+  const judged = all.filter((x) => x.sampleCount !== null);
+  const sampleFails = judged.filter((x) => x.sampleCount?.pass === false);
+  const sampleUnknown = judged.filter((x) => x.sampleCount?.pass === null);
+  if (flag("judge")) {
+    console.log(`\nSample figures stated as counts (sample-based answers): ${sampleFails.length}/${judged.length} runs (target 0)`);
+    for (const x of sampleFails) console.log(`  ${x.caseId}: ${x.sampleCount?.reason}`);
+    if (sampleUnknown.length) console.log(`  judge unavailable on ${sampleUnknown.length} runs`);
+  }
   console.log("Reminder: 8 fictional reviews. Treat recall as a harness proof, not a quality claim.");
 
   const report = {
@@ -264,12 +371,23 @@ async function main() {
       questionsPassed,
       questions: cases.length,
       failedCases,
+      groups: {
+        regression: { baseline: REGRESSION_BASELINE, ...regression },
+        statistics: { cases: statsIds.length, passing: casesPassing(statsIds), path: statsPath, exactText: exact },
+        boundary: { cases: boundaryIds.length, passing: casesPassing(boundaryIds), path: boundaryPath },
+        sampleCounts: flag("judge") ? { failed: sampleFails.length, judged: judged.length } : null,
+      },
     },
     results,
   };
   mkdirSync("evals/results", { recursive: true });
   writeFileSync("evals/results/latest.json", JSON.stringify(report, null, 2));
-  if (flag("baseline")) writeFileSync("evals/baseline.json", JSON.stringify(report, null, 2));
+  if (baselineFile) {
+    // Checked again: another run may have saved it meanwhile.
+    if (existsSync(baselineFile)) throw new Error(`${baselineFile} exists; saved baselines are never overwritten.`);
+    writeFileSync(baselineFile, JSON.stringify(report, null, 2));
+    console.log(`Saved ${baselineFile}`);
+  }
 
   if (process.env.LANGSMITH_TRACING === "true") {
     const { Client } = await import("langsmith");
