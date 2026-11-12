@@ -26,7 +26,7 @@ const plan = (stat: Partial<StatRequest>, filters: Partial<QueryFilters> = {}): 
   searchQuery: "parking",
   filters: { ...EMPTY_FILTERS, ...filters },
   route: "statistics",
-  stat: { kind: "mentions", themes: ["parking"], topic: "parking", sentiment: null, ...stat },
+  stat: { kind: "mentions", themes: ["parking"], topic: "parking", sentiment: null, ranks: null, ...stat },
 });
 
 describe.skipIf(!url)("answer pipeline, statistics route (database)", () => {

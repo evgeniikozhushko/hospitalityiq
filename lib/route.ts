@@ -15,7 +15,13 @@ export type StatsQuery =
   /** filters.since and filters.until are always set. */
   | { kind: "trend"; theme: string; sentiment: Sentiment | null; filters: QueryFilters };
 
-export type FallbackCode = "no_kind" | "several_themes" | "not_a_theme" | "seasonal_trend" | "no_window";
+export type FallbackCode =
+  | "no_kind"
+  | "several_themes"
+  | "not_a_theme"
+  | "property_needs_theme"
+  | "seasonal_trend"
+  | "no_window";
 export type Fallback = { code: FallbackCode; note: string };
 
 export type RouteDecision =
@@ -45,11 +51,23 @@ export function resolveRoute(plan: PlannerOutput, knownThemes: ThemeInfo[], toda
   const sentiment = stat.sentiment;
   const filters = plan.filters;
 
-  if (stat.kind === "ranking") return { route: "statistics", query: { kind: "ranking", sentiment, filters } };
+  // A ranking ranks themes. "Which property gets the most X" ranks properties: that is
+  // a per-property count of one theme, never a theme ranking.
+  const ranksProperties = stat.ranks === "properties";
+  if (stat.kind === "ranking" && !ranksProperties) {
+    return { route: "statistics", query: { kind: "ranking", sentiment, filters } };
+  }
 
   const requested = [...new Set((stat.themes ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean))];
   if (requested.length > 1) {
     return fallback("several_themes", "I can count one theme at a time; try asking about each separately.");
+  }
+
+  if (ranksProperties && requested.length === 0) {
+    return fallback(
+      "property_needs_theme",
+      'I can rank properties for one theme at a time, for example "which property gets the most parking complaints".',
+    );
   }
 
   const labels = countable(knownThemes).map((t) => t.label);
@@ -65,7 +83,7 @@ export function resolveRoute(plan: PlannerOutput, knownThemes: ThemeInfo[], toda
     );
   }
 
-  if (stat.kind === "mentions") {
+  if (stat.kind === "mentions" || stat.kind === "ranking") {
     return { route: "statistics", query: { kind: "mentions", theme: theme.slug, sentiment, filters } };
   }
 

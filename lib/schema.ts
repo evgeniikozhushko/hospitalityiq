@@ -145,6 +145,10 @@ export const StatRequestSchema = z.object({
     .nullable()
     .describe("The subject of the question in the user's own words, whether or not it is a theme"),
   sentiment: z.enum(["positive", "negative", "neutral"]).nullable(),
+  ranks: z
+    .enum(["themes", "properties"])
+    .nullable()
+    .describe('What a "most"/ranking question compares: themes, or properties; null when it compares nothing'),
 });
 export type StatRequest = z.infer<typeof StatRequestSchema>;
 
