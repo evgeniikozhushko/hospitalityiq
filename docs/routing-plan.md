@@ -25,19 +25,23 @@ Deferred: count-plus-quotations hybrid answers, several themes in one question, 
 
 ## Decisions
 
-1. **The planner chooses the route; code decides everything after.** `QueryPlanSchema` gains `route: "retrieval" | "statistics"` and a nullable `stat: { kind: mentions | ranking | trend, themes, topic, sentiment }` (every key nullable, as strict output requires). The model supplies filters and themes and never writes SQL.
+1. **The planner chooses the route; code decides everything after.** The planner returns `PlannerOutputSchema`: the existing `QueryPlanSchema` plus `route: "retrieval" | "statistics"` and a nullable `stat: { kind: mentions | ranking | trend, themes, topic, sentiment }` (every key nullable, as strict output requires). The model supplies filters and themes and never writes SQL.
+   - **`QueryPlanSchema` itself is unchanged.** Saved answers (`lib/askPersistence.ts`) and the wire format (`lib/askWire.ts`) parse it, so adding required fields to it would make previously saved answers fail to load. The new schema extends it instead, and code that only needs the plan keeps using `QueryPlan`.
    - **`themes`** is the list of theme slugs the question asks about, one entry per theme. A list, not a single theme, so that the gate can see a second theme and refuse it (decision 2). A ranking has `themes: null`.
    - **`topic`** is the subject of the question in the user's own words ("breakfast", "the thermal pool", "check-in"), copied whether or not it maps to a theme. It is only ever shown back in a fallback note, never used in SQL.
    - **`mode` stays, narrowed.** Its description drops counting and trends: `aggregate` now means comparing properties in words, and `mode` only matters on the retrieval route. A fallback from statistics always uses `aggregate` (40 reviews).
    - **Theme synonyms are explicit.** The prompt lists each theme slug with a meaning and an explicit list of synonyms (check-in, reception → front-desk; cleanliness → housekeeping). A narrower or different topic ("breakfast", "thermal pool") gets an empty `themes` list and its `topic` set. `other` is never a valid planner theme.
-   - **Boundary rules, with examples in the prompt.** Counts, rankings, "most/least", "how many" and "changed over time" go to statistics. "What do guests say/praise/complain about" stays on retrieval. "What do guests complain about **most**" goes to statistics (a ranking with negative sentiment). A question that asks for both a count and what guests say ("how many complain about parking, and what do they say?") goes to statistics, followed by the fixed line "For what guests say, ask: 'What do guests say about parking?'".
+   - **Boundary rules, with examples in the prompt.** Counts, rankings, "most/least", "how many" and "changed over time" go to statistics. "What do guests say/praise/complain about" stays on retrieval. "What do guests complain about **most**" goes to statistics (a ranking with negative sentiment). A question that asks for both a count and what guests say ("how many complain about parking, and what do they say?") goes to statistics, followed by the fixed line "For what guests say, ask: 'What do guests say about parking?'". That line ends **every** statistics answer that has a count (for a ranking, it names the top theme), so no planner field is needed to detect the "what do they say" half; it is left out only when there is nothing to count.
    - Sentiment follows the glossary: complaint = negative, praise = positive, "good or bad" / no qualifier = any.
 
 2. **A pure gate sits between plan and SQL.** `resolveRoute(plan, knownThemes, today)` returns `statistics` (with a completed window), or a reason to fall back to retrieval with a visible note. It never guesses a nearest theme. In order:
    - `intent !== "review_insight"` → statistics is never used; the existing decline message stands, whatever `route` says.
-   - `themes` has more than one entry → fall back: "I can count one theme at a time; try asking about each separately." Checked before validity, so "parking or breakfast" gets this note rather than the next one.
+   - `route: "statistics"` but `stat` or `stat.kind` is null → fall back: "I couldn't tell what to count."
+   - `kind: "ranking"` → statistics; `themes` is ignored.
+   - `themes` has more than one distinct entry → fall back: "I can count one theme at a time; try asking about each separately." Checked before validity, so "parking or breakfast" gets this note rather than the next one.
    - `themes` empty or null (for `mentions` and `trend`), or its one entry unknown or `other` → fall back. With `topic` set: "I can only count broad themes such as Food, not <topic> specifically." With `topic` null: "I can only count broad themes such as Food or Parking." The note lists the theme labels either way.
-   - Trend with `since` but no `until` → `until = today`. Trend with no window at all → fall back with a note asking for a time period. Trend combined with a `months` filter → fall back ("winter" has no single previous period).
+   - Trend combined with a `months` filter → fall back ("winter" has no single previous period). Checked before the window, so "has winter feedback changed?" gets this note, which is the real reason, rather than "which period?".
+   - Trend with no `since` (no window, or only an `until`) → fall back with a note asking for a time period. Trend with `since` but no `until` → `until = today`.
    - The fallback is the existing retrieval path plus a note that the figure cannot be counted exactly. A sampled number is never presented as a count.
 
 3. **One `today`, in local time.** `today` is computed once per question in a portfolio timezone constant (`America/Edmonton`) and passed both to the planner and to the gate's `until` default. Today `planQuery` defaults to the UTC date, which is already tomorrow on Banff evenings.
@@ -82,7 +86,7 @@ Across every case answered on the retrieval route, a new judge rubric item asks:
 
 ## Tests
 
-- Pure (no database, no OpenAI): `resolveRoute` for each rule in decision 2 (intent, several themes, themes empty/unknown/`other` with and without `topic`, `until` filled from `today`, no window, months); `renderStats` for each result shape (zero counts, nothing tagged, `percent: null`, below and above `MIN_TREND_MENTIONS`, shares, `other` excluded); the local `today` near midnight UTC; error-to-message mapping for both kinds of failure.
+- Pure (no database, no OpenAI): `resolveRoute` for each rule in decision 2 (intent, no kind, ranking, several themes, themes empty/unknown/`other` with and without `topic`, `until` filled from `today`, no window, months); `renderStats` for each result shape (zero counts, nothing tagged, `percent: null`, below and above `MIN_TREND_MENTIONS`, shares, `other` excluded); the local `today` near midnight UTC; error-to-message mapping for both kinds of failure.
 - Integration (disposable database, synthetic data, existing pattern): `answerQuestion` with a stubbed planner returns the exact text for a hand-computed case; an unknown property yields the error and never broadens; a missing `DATABASE_URL_READONLY` and an unreachable database both fall back to retrieval.
 - Real stack: the eval cases above.
 
