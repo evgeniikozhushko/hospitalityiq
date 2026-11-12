@@ -126,6 +126,42 @@ export const QueryPlanSchema = z.object({
 });
 export type QueryPlan = z.infer<typeof QueryPlanSchema>;
 
+/**
+ * The planner's request for an exact count (docs/routing-plan.md, decision 1).
+ * Every key is nullable because strict structured output requires all keys.
+ * Code (lib/route.ts) checks it before any SQL runs; the model never writes SQL.
+ */
+export const StatKind = z.enum(["mentions", "ranking", "trend"]);
+export type StatKind = z.infer<typeof StatKind>;
+
+export const StatRequestSchema = z.object({
+  kind: StatKind.nullable(),
+  themes: z
+    .array(z.string())
+    .nullable()
+    .describe("Theme slugs the question asks about, one entry per theme; null for a ranking"),
+  topic: z
+    .string()
+    .nullable()
+    .describe("The subject of the question in the user's own words, whether or not it is a theme"),
+  sentiment: z.enum(["positive", "negative", "neutral"]).nullable(),
+});
+export type StatRequest = z.infer<typeof StatRequestSchema>;
+
+export const Route = z.enum(["retrieval", "statistics"]);
+export type Route = z.infer<typeof Route>;
+
+/**
+ * What the planner returns once routing is wired in: a QueryPlan plus the route.
+ * Kept separate from QueryPlanSchema so saved answers and the wire format, which
+ * parse QueryPlanSchema, are unaffected.
+ */
+export const PlannerOutputSchema = QueryPlanSchema.extend({
+  route: Route,
+  stat: StatRequestSchema.nullable(),
+});
+export type PlannerOutput = z.infer<typeof PlannerOutputSchema>;
+
 export const EMPTY_FILTERS: QueryFilters = {
   propertyTypes: null,
   propertyNames: null,
