@@ -185,6 +185,16 @@ describe.skipIf(!url)("review statistics (database)", () => {
       expect(err.known).toContain("Synthetic Spa");
     });
 
+    it("only properties with reviews from the counted source are known, so practice properties never appear", async () => {
+      const real = scope({ propertyNames: [LODGE] }, { source: "google_business_profile" });
+      const err = await themeMentions(ro, real, { theme: "parking" }).catch((e) => e);
+      expect(err).toBeInstanceOf(UnknownPropertyError);
+      expect(err.known).toEqual([]);
+      // With no source restriction, every property is known (scripts and tests).
+      const any = await themeMentions(ro, scope({ propertyNames: [LODGE] }, { source: undefined }), { theme: "parking" });
+      expect(any.scopeLabel).toBe(LODGE);
+    });
+
     it("a company alias means all properties, only when no specific property is named", async () => {
       const all = await themeMentions(ro, scope({ propertyNames: ["BCP"] }), { theme: "parking" });
       expect(all.scopeLabel).toBe("All properties (BCP)");

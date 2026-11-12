@@ -163,6 +163,27 @@ function renderMentions(o: Extract<StatsOutcome, { kind: "mentions" }>, ctx: Ren
   return { blocks, followUp: r.total.coverage.currentTagged > 0 ? followUp(label) : null };
 }
 
+const listJoin = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
+
+/**
+ * Equal counts are a tie, not a ranking: say so, so the first line is not read as
+ * "the top complaint". The SQL orders a tie alphabetically.
+ */
+function tieSentences(ranked: ThemeRanking["themes"], themes: ThemeInfo[]): string | null {
+  if (ranked.length < 2) return null;
+  const sentences: string[] = [];
+  const top = ranked.filter((t) => t.count === ranked[0].count);
+  if (top.length > 1) {
+    sentences.push(
+      `${listJoin(top.map((t) => labelOf(t.theme, themes)))} are tied at the top, with ${ranked[0].count} each.`,
+    );
+  }
+  if (ranked.some((t, i) => i > 0 && t.count === ranked[i - 1].count)) {
+    sentences.push("Tied themes are listed alphabetically.");
+  }
+  return sentences.length > 0 ? sentences.join(" ") : null;
+}
+
 function renderRanking(o: Extract<StatsOutcome, { kind: "ranking" }>, ctx: RenderContext): Rendered {
   const r = o.result;
   const c = r.coverage;
@@ -191,6 +212,8 @@ function renderRanking(o: Extract<StatsOutcome, { kind: "ranking" }>, ctx: Rende
         .join("\n"),
     );
   }
+  const ties = tieSentences(r.themes, ctx.themes);
+  if (ties) blocks.push(ties);
   blocks.push("Mentions outside the listed themes are not ranked.");
   blocks.push(`Counted over ${taggedReviews(c.currentTagged)} ${coverageText(c)}.`);
   return { blocks, followUp: r.themes.length > 0 ? followUp(labelOf(r.themes[0].theme, ctx.themes)) : null };

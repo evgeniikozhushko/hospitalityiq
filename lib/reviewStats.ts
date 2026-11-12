@@ -69,11 +69,18 @@ export type ThemeRanking = {
 
 export type DateWindow = { since: string; until: string };
 
+/**
+ * One period of a trend: the mentions plus its window. A mapped (flat) type rather
+ * than an intersection, so the wire schema's drift guard (lib/askWire.ts) can check
+ * it with strict type equality.
+ */
+export type PeriodMentions = { [K in keyof (ThemeMentions & { window: DateWindow })]: (ThemeMentions & { window: DateWindow })[K] };
+
 export type ThemeTrend = {
   theme: string;
   sentiment: Sentiment | null;
-  current: ThemeMentions & { window: DateWindow };
-  previous: ThemeMentions & { window: DateWindow };
+  current: PeriodMentions;
+  previous: PeriodMentions;
   change: { absolute: number; percent: number | null };
 };
 
@@ -108,11 +115,21 @@ export function previousWindow(w: DateWindow): DateWindow {
 
 type Resolved = { propertyIds: number[] | null; scopeLabel: string };
 
-async function resolveProperties(db: Db, f: QueryFilters): Promise<Resolved> {
+/**
+ * Match the requested names to properties. With a source, only properties that have
+ * reviews from that source are known, so practice (synthetic) properties are never
+ * listed in a user's answer or counted under the real source.
+ */
+async function resolveProperties(db: Db, f: QueryFilters, source?: string): Promise<Resolved> {
   const requested = (f.propertyNames ?? []).map((n) => n.trim()).filter(Boolean);
   if (requested.length === 0) return { propertyIds: null, scopeLabel: "All properties" };
 
-  const { rows } = await db.query<{ id: string; name: string }>("SELECT id, name FROM properties ORDER BY name");
+  const { rows } = await db.query<{ id: string; name: string }>(
+    `SELECT p.id, p.name FROM properties p
+     WHERE $1::text IS NULL OR EXISTS (SELECT 1 FROM reviews r WHERE r.property_id = p.id AND r.source = $1)
+     ORDER BY p.name`,
+    [source ?? null],
+  );
   const byLower = new Map(rows.map((r) => [r.name.toLowerCase(), r]));
   const kept: Array<{ id: string; name: string }> = [];
   const unknown: string[] = [];
@@ -242,7 +259,7 @@ export async function themeMentions(
 ): Promise<ThemeMentions> {
   validate(scope);
   await requireTheme(db, opts.theme);
-  const resolved = await resolveProperties(db, scope.filters);
+  const resolved = await resolveProperties(db, scope.filters, scope.source);
   const sentiment = opts.sentiment ?? null;
 
   const sql = `
@@ -292,7 +309,7 @@ export async function themeRanking(
   opts: { sentiment?: Sentiment | null; limit?: number } = {},
 ): Promise<ThemeRanking> {
   validate(scope);
-  const resolved = await resolveProperties(db, scope.filters);
+  const resolved = await resolveProperties(db, scope.filters, scope.source);
   const sentiment = opts.sentiment ?? null;
   const limit = opts.limit ?? 5;
   if (!Number.isInteger(limit) || limit < 1) throw new StatsInputError("limit must be a positive integer.");

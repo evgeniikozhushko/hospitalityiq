@@ -195,6 +195,35 @@ describe("renderStats: ranking", () => {
     expect(ranking()).toMatch(/ask: "What do guests say about front desk\?"$/);
   });
 
+  it("says no tie when one theme leads", () => {
+    expect(ranking()).not.toMatch(/tied/);
+  });
+
+  it("says when themes are tied at the top, instead of implying one leads", () => {
+    const tied = [
+      { theme: "front-desk", count: 1 },
+      { theme: "housekeeping", count: 1 },
+      { theme: "parking", count: 1 },
+    ];
+    const text = ranking({ sentiment: "negative", themes: tied });
+    expect(text).toContain("Front desk, Housekeeping and Parking are tied at the top, with 1 each.");
+    // The order within a tie is alphabetical, not a ranking.
+    expect(text).toContain("Tied themes are listed alphabetically.");
+    expect(ranking({ themes: tied.slice(0, 2) })).toContain("Front desk and Housekeeping are tied at the top, with 1 each.");
+  });
+
+  it("explains alphabetical order for a tie below the top too", () => {
+    const text = ranking({
+      themes: [
+        { theme: "front-desk", count: 3 },
+        { theme: "housekeeping", count: 1 },
+        { theme: "parking", count: 1 },
+      ],
+    });
+    expect(text).not.toMatch(/tied at the top/);
+    expect(text).toContain("Tied themes are listed alphabetically.");
+  });
+
   it("gives no ranking when nothing is tagged", () => {
     const text = ranking({ themes: [], coverage: cov({ currentTagged: 0, untagged: 8 }) });
     expect(text).toContain("None of the 8 reviews in scope are tagged yet, so I can't rank themes.");

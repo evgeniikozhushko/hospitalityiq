@@ -3,6 +3,7 @@
  * Usage: npm run ask -- "what do guests praise at our restaurants?"
  */
 import { answerQuestion } from "../lib/answer";
+import { closeReadonlyPool } from "../lib/db/readonlyPool";
 
 async function main() {
   const question = process.argv.slice(2).join(" ");
@@ -31,6 +32,9 @@ async function main() {
         }
         console.log("\nANSWER");
         break;
+      case "stats":
+        console.log(`\nSTATISTICS (${e.outcome.kind}, exact count from Postgres)\n\nANSWER`);
+        break;
       case "delta":
         process.stdout.write(e.text);
         break;
@@ -41,7 +45,10 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main()
+  .catch((err) => {
+    console.error(err);
+    process.exitCode = 1;
+  })
+  // The read-only pool keeps the process alive until its idle clients time out.
+  .finally(() => closeReadonlyPool());
