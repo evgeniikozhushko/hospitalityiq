@@ -4,7 +4,8 @@
  */
 import { z } from "zod";
 import type { AnswerEvent } from "./answer";
-import { PropertyType, QueryIntent, QueryPlanSchema, type Source } from "./schema";
+import { PropertyType, QueryFiltersSchema, QueryIntent, QueryPlanSchema, type Source } from "./schema";
+import type { StatsOutcome } from "./statsAnswer";
 
 export type AskEvent = AnswerEvent | { type: "error"; message: string };
 
@@ -19,6 +20,55 @@ export const SourceWireSchema = z.object({
   text: z.string(),
   score: z.number(),
 });
+
+/** The structured result behind a statistics answer (lib/statsAnswer.ts StatsOutcome). */
+const SentimentWire = z.enum(["positive", "negative", "neutral"]).nullable();
+const CoverageWire = z.object({
+  totalReviews: z.number(),
+  textReviews: z.number(),
+  currentTagged: z.number(),
+  stale: z.number(),
+  untagged: z.number(),
+});
+const ThemeMentionsWire = z.object({
+  theme: z.string(),
+  sentiment: SentimentWire,
+  scopeLabel: z.string(),
+  rows: z.array(
+    z.object({ propertyId: z.number(), propertyName: z.string(), count: z.number(), coverage: CoverageWire }),
+  ),
+  total: z.object({ count: z.number(), coverage: CoverageWire }),
+});
+const PeriodWire = ThemeMentionsWire.extend({ window: z.object({ since: z.string(), until: z.string() }) });
+
+export const StatsOutcomeWireSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("mentions"),
+    query: z.object({ kind: z.literal("mentions"), theme: z.string(), sentiment: SentimentWire, filters: QueryFiltersSchema }),
+    result: ThemeMentionsWire,
+  }),
+  z.object({
+    kind: z.literal("ranking"),
+    query: z.object({ kind: z.literal("ranking"), sentiment: SentimentWire, filters: QueryFiltersSchema }),
+    result: z.object({
+      sentiment: SentimentWire,
+      scopeLabel: z.string(),
+      themes: z.array(z.object({ theme: z.string(), count: z.number() })),
+      coverage: CoverageWire,
+    }),
+  }),
+  z.object({
+    kind: z.literal("trend"),
+    query: z.object({ kind: z.literal("trend"), theme: z.string(), sentiment: SentimentWire, filters: QueryFiltersSchema }),
+    result: z.object({
+      theme: z.string(),
+      sentiment: SentimentWire,
+      current: PeriodWire,
+      previous: PeriodWire,
+      change: z.object({ absolute: z.number(), percent: z.number().nullable() }),
+    }),
+  }),
+]);
 
 const EventSchemas = {
   plan: z.object({
@@ -37,6 +87,7 @@ const EventSchemas = {
     sources: z.array(SourceWireSchema),
     relaxed: z.boolean(),
   }),
+  stats: z.object({ type: z.literal("stats"), outcome: StatsOutcomeWireSchema }),
   delta: z.object({ type: z.literal("delta"), text: z.string() }),
   done: z.object({ type: z.literal("done") }),
   error: z.object({ type: z.literal("error"), message: z.string() }),
@@ -47,6 +98,7 @@ export const AskEventSchema = z.discriminatedUnion("type", [
   EventSchemas.declined,
   EventSchemas.no_data,
   EventSchemas.sources,
+  EventSchemas.stats,
   EventSchemas.delta,
   EventSchemas.done,
   EventSchemas.error,
@@ -57,6 +109,7 @@ type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 type Assert<T extends true> = T;
 export type SourceSchemaMatchesSource = Assert<Equal<z.infer<typeof SourceWireSchema>, Source>>;
+export type StatsSchemaMatchesStatsOutcome = Assert<Equal<z.infer<typeof StatsOutcomeWireSchema>, StatsOutcome>>;
 export type EventSchemaMatchesAskEvent = Assert<Equal<z.infer<typeof AskEventSchema>, AskEvent>>;
 
 export type WireParse =

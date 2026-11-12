@@ -113,6 +113,9 @@ export function askReducer(state: AskState, action: AskAction): AskState {
           return { ...state, status: event.type, message: event.message };
         case "sources":
           return { ...state, status: "sources", sources: event.sources, relaxed: event.relaxed };
+        case "stats":
+          // The answer text arrives as delta events; the structured result is for later UI use.
+          return state;
         case "delta":
           return { ...state, status: "streaming", answer: state.answer + event.text };
         case "done":

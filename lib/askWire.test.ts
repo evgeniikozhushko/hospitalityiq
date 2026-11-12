@@ -10,11 +10,44 @@ const plan: QueryPlan = {
   filters: { ...EMPTY_FILTERS, minRating: 1 },
 };
 
+const coverage = { totalReviews: 17, textReviews: 16, currentTagged: 15, stale: 0, untagged: 1 };
+const mentions = {
+  theme: "parking",
+  sentiment: null,
+  scopeLabel: "All properties",
+  rows: [{ propertyId: 1, propertyName: "Lodge", count: 7, coverage }],
+  total: { count: 9, coverage },
+};
+const statsMentions = {
+  type: "stats",
+  outcome: {
+    kind: "mentions",
+    query: { kind: "mentions", theme: "parking", sentiment: null, filters: EMPTY_FILTERS },
+    result: mentions,
+  },
+};
+const statsTrend = {
+  type: "stats",
+  outcome: {
+    kind: "trend",
+    query: { kind: "trend", theme: "parking", sentiment: "negative", filters: { ...EMPTY_FILTERS, since: "2025-11-10", until: "2026-11-10" } },
+    result: {
+      theme: "parking",
+      sentiment: "negative",
+      current: { ...mentions, window: { since: "2025-11-10", until: "2026-11-10" } },
+      previous: { ...mentions, window: { since: "2024-11-10", until: "2025-11-09" } },
+      change: { absolute: 0, percent: null },
+    },
+  },
+};
+
 const valid: Record<string, unknown> = {
   plan: { type: "plan", plan, droppedPropertyNames: ["Nope"] },
   declined: { type: "declined", intent: "campaign", message: "not yet" },
   no_data: { type: "no_data", message: "nothing" },
   sources: { type: "sources", sources: [source], relaxed: false },
+  "stats (mentions)": statsMentions,
+  "stats (trend)": statsTrend,
   delta: { type: "delta", text: "hi" },
   done: { type: "done" },
   error: { type: "error", message: "bad" },
@@ -26,6 +59,11 @@ describe("parseWireEvent", () => {
       expect(parseWireEvent(raw)).toEqual({ kind: "event", event: raw });
     });
   }
+
+  it("accepts a plan event carrying the route, which the client does not need", () => {
+    const raw = { type: "plan", plan: { ...plan, route: "statistics", stat: null }, droppedPropertyNames: [] };
+    expect(parseWireEvent(raw)).toEqual({ kind: "event", event: { ...raw, plan } });
+  });
 
   it("reports an unrecognised type as unknown, not invalid", () => {
     expect(parseWireEvent({ type: "heartbeat" })).toEqual({ kind: "unknown", type: "heartbeat" });
@@ -54,6 +92,9 @@ describe("parseWireEvent", () => {
     ["declined with review_insight intent", { type: "declined", intent: "review_insight", message: "x" }],
     ["no_data without message", { type: "no_data" }],
     ["error without message", { type: "error" }],
+    ["stats without an outcome", { type: "stats" }],
+    ["stats with an unknown kind", { type: "stats", outcome: { ...statsMentions.outcome, kind: "median" } }],
+    ["stats with a string count", { type: "stats", outcome: { ...statsMentions.outcome, result: { ...mentions, total: { count: "9", coverage } } } }],
   ])("rejects a known event with a bad payload: %s", (_name, raw) => {
     expect(parseWireEvent(raw).kind).toBe("invalid");
   });

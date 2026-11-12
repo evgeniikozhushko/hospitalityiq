@@ -47,7 +47,7 @@ Deferred: count-plus-quotations hybrid answers, several themes in one question, 
 3. **One `today`, in local time.** `today` is computed once per question in a portfolio timezone constant (`America/Edmonton`) and passed both to the planner and to the gate's `until` default. Today `planQuery` defaults to the UTC date, which is already tomorrow on Banff evenings.
    - **Two timezone rules, two jobs, no conflict.** The portfolio timezone decides which calendar *dates* the question means (today, "last year"), once, for the whole question. Each property's own timezone then decides which *instants* fall inside those dates (decision 4), so a window means the same local days at every property. While every property is in `America/Edmonton` the two agree; if a property in another timezone is added, this split still holds.
 
-4. **Statistics handle properties differently from retrieval, on purpose.** `sanitizePlan` silently drops unknown property names, which suits retrieval but would broaden a count to all properties. The statistics route uses the planner's raw names: an unknown name returns "no property named X" (`UnknownPropertyError`); a company alias (BCP) means all properties only when no specific property is named. Windows are local dates in the property's timezone. Qdrant's `month` field is UTC, so a statistics count and a retrieval sample can differ near month boundaries; this stays documented, not hidden.
+4. **Statistics handle properties differently from retrieval, on purpose.** `sanitizePlan` silently drops unknown property names, which suits retrieval but would broaden a count to all properties. The statistics route uses the planner's raw names: an unknown name returns "no property named X" (`UnknownPropertyError`). Only properties with reviews from the counted source are known, so the synthetic practice properties are never listed in that message or counted under the real source. A company alias (BCP) means all properties only when no specific property is named. Windows are local dates in the property's timezone. Qdrant's `month` field is UTC, so a statistics count and a retrieval sample can differ near month boundaries; this stays documented, not hidden.
 
 5. **Fixed data scope.** Statistics always use one `tagSource` and `taxonomyVersion` (constants `manual` and `v1`, overridable by env) and `source: "google_business_profile"`. This excludes the `synthetic` practice set. It does not exclude the 8 fictional fixtures, which are stored under the Google source and will be replaced by real reviews rather than kept alongside them. Every answer carries coverage and a "provisional tags" caveat while the taxonomy is provisional.
 
@@ -56,6 +56,7 @@ Deferred: count-plus-quotations hybrid answers, several themes in one question, 
    - **The theme counted is always named** by its label, so a reworded question cannot hide what was counted.
    - **Property comparisons** are ordered by count (as asked), and every row shows its share of tagged reviews: "Lodge: 12 of 300 tagged reviews (4%)". No re-ranking by share.
    - **Theme rankings exclude `other`** (`themeRanking` already does) and the rendered text says so: "Mentions outside the listed themes are not ranked."
+   - **Ties are stated, not ranked.** When themes share the top count the answer says so ("Front desk, Housekeeping and Parking are tied at the top, with 1 each."), and any tie in the list adds "Tied themes are listed alphabetically.", so a numbered list never implies one theme leads.
    - **Trends** show both periods with their own window, count and tagged total. The percent change is shown only when both periods have at least `MIN_TREND_MENTIONS` (10) mentions; otherwise a fixed sentence: "Too few mentions to show a reliable change."
 
 7. **Read-only connection in the app.** `lib/db/readonlyPool.ts` builds a `pg` Pool lazily from `DATABASE_URL_READONLY`, cached on `globalThis` so Next dev reloads do not leak connections. Two kinds of failure, handled differently:
@@ -92,7 +93,9 @@ Across every case answered on the retrieval route, a new judge rubric item asks:
 
 ## Files
 
-`lib/schema.ts`, `lib/plan.ts`, new `lib/route.ts`, new `lib/statsAnswer.ts`, new `lib/db/readonlyPool.ts`, `lib/answer.ts`, `lib/askWire.ts`, `scripts/ask.ts`, `scripts/eval.ts`, `lib/evalMetrics.ts`, `evals/dataset.json`, plus status text in `docs/project-scope.md` and the README.
+- PR A (merged): `lib/schema.ts`, new `lib/today.ts`, new `lib/route.ts`, new `lib/statsAnswer.ts`.
+- PR B: new `lib/answerPipeline.ts` (the pipeline, with every external call passed in so it can be tested with a stubbed planner and the test database), `lib/answer.ts` (the real wiring), new `lib/db/readonlyPool.ts`, new `lib/statsSettings.ts`, new `lib/themeGuide.ts` (theme synonyms for the planner, checked against the seeded themes), `lib/plan.ts`, `lib/askWire.ts`, `lib/askState.ts`, `lib/reviewStats.ts` (known properties limited to the counted source), `scripts/ask.ts`, `.env.example`.
+- PR C: `scripts/eval.ts`, `lib/evalMetrics.ts`, `evals/dataset.json`, plus status text in `docs/project-scope.md` and the README.
 
 ## Risks
 
