@@ -13,8 +13,14 @@ import {
   reciprocalRank,
   sourcesCorrect,
   unmatchedQuotes,
+  compareToBaseline,
+  missingText,
+  pathOf,
+  splitNote,
   type RunTrace,
 } from "./evalMetrics";
+import { FALLBACK_SUFFIX } from "./route";
+import { STATS_UNAVAILABLE_NOTE } from "./statsAnswer";
 import { EMPTY_FILTERS } from "./schema";
 
 const trace = (over: Partial<RunTrace>): RunTrace => ({
@@ -27,6 +33,8 @@ const trace = (over: Partial<RunTrace>): RunTrace => ({
   relaxed: false,
   sources: [],
   answer: "",
+  planRoute: "retrieval",
+  statsKind: null,
   ...over,
 });
 
@@ -174,5 +182,69 @@ describe("targets", () => {
   });
   it("mean skips NaN", () => {
     expect(mean([1, NaN, 0])).toBe(0.5);
+  });
+});
+
+describe("pathOf: the path a question actually took", () => {
+  const src = { n: 1, reviewId: "r", propertyName: "P", propertyType: "hotel" as const, rating: 5, createdAt: "", text: "", score: 1 };
+
+  it("names each path by what was observed, not by the planner's label alone", () => {
+    expect(pathOf(trace({ declinedIntent: "financial", planRoute: "statistics" }))).toBe("declined");
+    expect(pathOf(trace({ planRoute: "statistics", statsKind: "mentions" }))).toBe("statistics");
+    expect(pathOf(trace({ planRoute: "statistics", sources: [src] }))).toBe("fallback");
+    expect(pathOf(trace({ planRoute: "statistics", noData: true }))).toBe("fallback");
+    expect(pathOf(trace({ planRoute: "statistics", answer: "I don't know a property named X." }))).toBe("stats_message");
+    expect(pathOf(trace({ planRoute: "retrieval", sources: [src] }))).toBe("retrieval");
+    expect(pathOf(trace({ planRoute: null, noData: true }))).toBe("retrieval");
+  });
+});
+
+describe("splitNote: code-written fallback note vs model text", () => {
+  it("splits off a gate note and the unavailable note", () => {
+    const gate = `I can only count broad themes (Food), not breakfast specifically. ${FALLBACK_SUFFIX}`;
+    expect(splitNote(`${gate}\n\nModel says "hi" [1].`)).toEqual({ note: gate, modelText: 'Model says "hi" [1].' });
+    expect(splitNote(`${STATS_UNAVAILABLE_NOTE}\n\nModel.`)).toEqual({ note: STATS_UNAVAILABLE_NOTE, modelText: "Model." });
+  });
+
+  it("leaves an answer without a note alone", () => {
+    expect(splitNote("Plain answer.\n\nMore.")).toEqual({ note: null, modelText: "Plain answer.\n\nMore." });
+  });
+});
+
+describe("missingText: exact numbers in the rendered answer", () => {
+  it("lists the expected snippets that are absent", () => {
+    const answer = "2 of 8 tagged reviews mention Food (9 reviews in scope: 8 tagged, 1 rating-only).";
+    expect(missingText(answer, ["2 of 8 tagged reviews mention Food", "1 rating-only"])).toEqual([]);
+    expect(missingText(answer, ["3 of 8 tagged reviews mention Food"])).toEqual(["3 of 8 tagged reviews mention Food"]);
+    expect(missingText(answer, undefined)).toEqual([]);
+  });
+});
+
+describe("compareToBaseline: the regression group, case by case", () => {
+  const runs = (...passes: boolean[]) => passes.map((pass) => ({ pass }));
+
+  it("passes a case only when every run passes, as the saved run did", () => {
+    const c = compareToBaseline(
+      { q01: runs(true, true, true), q02: runs(true, false, true), q05: runs(false, false, false) },
+      { q01: runs(true, true, true), q02: runs(true, true, true), q05: runs(false, true, false) },
+      ["q01", "q02", "q05"],
+      ["q05"],
+    );
+    expect(c.passed).toEqual(["q01"]);
+    expect(c.regressions).toEqual(["q02"]);
+    expect(c.scored).toEqual(["q01", "q02"]);
+    expect(c.separate).toEqual([{ id: "q05", now: false, before: false }]);
+  });
+
+  it("counts a case missing from the saved run as not comparable", () => {
+    const c = compareToBaseline({ q30: runs(true) }, {}, ["q30"], []);
+    expect(c.notInBaseline).toEqual(["q30"]);
+    expect(c.scored).toEqual([]);
+  });
+
+  it("reports a fix as an improvement, not a regression", () => {
+    const c = compareToBaseline({ q07: runs(true) }, { q07: runs(false) }, ["q07"], []);
+    expect(c.improvements).toEqual(["q07"]);
+    expect(c.regressions).toEqual([]);
   });
 });

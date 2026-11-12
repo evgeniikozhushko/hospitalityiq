@@ -2,7 +2,9 @@
  * Pure scoring helpers for the eval harness (scripts/eval.ts).
  * No env, OpenAI or Qdrant imports, so they are cheap to unit-test.
  */
+import { FALLBACK_SUFFIX } from "./route";
 import type { QueryFilters, Source } from "./schema";
+import { STATS_UNAVAILABLE_NOTE } from "./statsAnswer";
 
 export const RECALL_K = 5;
 
@@ -24,6 +26,10 @@ export type RunTrace = {
   relaxed: boolean;
   sources: Source[];
   answer: string;
+  /** The planner's suggested route (lib/route.ts decides). */
+  planRoute: "retrieval" | "statistics" | null;
+  /** Set when a stats event arrived: the answer is an exact count. */
+  statsKind: string | null;
 };
 
 /** Classify a run by what the user would observe, not by the planner's label. */
@@ -231,4 +237,86 @@ export function checkTargets(recalls: number[], sourcesOk: boolean[]): TargetRes
       pass: share >= TARGETS.sourcesCorrectShare,
     },
   ];
+}
+
+// ---------------------------------------------------------------------------
+// Statistics routing (docs/routing-plan.md, Eval)
+// ---------------------------------------------------------------------------
+
+/**
+ * The path a question actually took, by what the user would observe:
+ *  statistics     an exact count (a stats event arrived)
+ *  stats_message  the planner chose statistics and a fixed message answered (unknown property)
+ *  fallback       the planner chose statistics, but a sample of reviews answered, with a note
+ *  retrieval      a sample of reviews answered, as planned
+ *  declined       a non-review question
+ */
+export type Path = "statistics" | "stats_message" | "fallback" | "retrieval" | "declined";
+
+export function pathOf(t: RunTrace): Path {
+  if (t.declinedIntent) return "declined";
+  if (t.statsKind) return "statistics";
+  if (t.planRoute === "statistics") return t.sources.length > 0 || t.noData ? "fallback" : "stats_message";
+  return "retrieval";
+}
+
+/**
+ * Split the code-written note that heads a fallback answer from the model's text, so
+ * checks on model output (citations, quotes, grounding) never grade the note.
+ */
+export function splitNote(answer: string): { note: string | null; modelText: string } {
+  const end = answer.indexOf("\n\n");
+  const first = end >= 0 ? answer.slice(0, end) : answer;
+  if (first.endsWith(FALLBACK_SUFFIX) || first === STATS_UNAVAILABLE_NOTE) {
+    return { note: first, modelText: end >= 0 ? answer.slice(end + 2) : "" };
+  }
+  return { note: null, modelText: answer };
+}
+
+/** Expected snippets (hand-computed numbers, fixed notes) missing from the answer. */
+export function missingText(answer: string, expected: string[] | undefined): string[] {
+  return (expected ?? []).filter((x) => !answer.includes(x));
+}
+
+export type BaselineComparison = {
+  /** Comparable cases, minus the ones reported separately. */
+  scored: string[];
+  passed: string[];
+  /** Passed in the saved run, fail now. */
+  regressions: string[];
+  /** Failed in the saved run, pass now. */
+  improvements: string[];
+  separate: Array<{ id: string; now: boolean; before: boolean }>;
+  notInBaseline: string[];
+};
+
+/**
+ * Compare the regression group with a saved run, case by case. A case passes only
+ * when every run passes, the same rule scripts/eval.ts has always used.
+ */
+export function compareToBaseline(
+  now: Record<string, Array<{ pass: boolean }>>,
+  before: Record<string, Array<{ pass: boolean }>>,
+  ids: string[],
+  reportSeparately: string[],
+): BaselineComparison {
+  const allPass = (r: Array<{ pass: boolean }> | undefined) => !!r && r.length > 0 && r.every((x) => x.pass);
+  const out: BaselineComparison = { scored: [], passed: [], regressions: [], improvements: [], separate: [], notInBaseline: [] };
+  for (const id of ids) {
+    if (!before[id]) {
+      out.notInBaseline.push(id);
+      continue;
+    }
+    const n = allPass(now[id]);
+    const b = allPass(before[id]);
+    if (reportSeparately.includes(id)) {
+      out.separate.push({ id, now: n, before: b });
+      continue;
+    }
+    out.scored.push(id);
+    if (n) out.passed.push(id);
+    if (b && !n) out.regressions.push(id);
+    if (!b && n) out.improvements.push(id);
+  }
+  return out;
 }
