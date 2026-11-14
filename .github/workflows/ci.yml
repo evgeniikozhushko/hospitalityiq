@@ -42,6 +42,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Route types such as LayoutProps are generated, not checked in.
+      - run: npx next typegen
       - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm test

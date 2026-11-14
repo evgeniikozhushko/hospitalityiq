@@ -53,7 +53,7 @@ Open [http://localhost:3000](http://localhost:3000) to see the app. Without Post
 ### Checks
 
 ```bash
-npx tsc --noEmit
+npx next typegen && npx tsc --noEmit   # typegen writes the route types a fresh clone lacks
 npm run lint
 npm test                           # database tests run when DATABASE_URL_TEST is set, and are skipped otherwise
 ```
