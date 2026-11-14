@@ -17,6 +17,12 @@ import {
   missingText,
   pathOf,
   splitNote,
+  deterministicPass,
+  isJudgeCheck,
+  judgeRate,
+  longestSharedRun,
+  PROMPT_OVERLAP_WORDS,
+  quotedInPrompts,
   type RunTrace,
 } from "./evalMetrics";
 import { FALLBACK_SUFFIX } from "./route";
@@ -246,5 +252,66 @@ describe("compareToBaseline: the regression group, case by case", () => {
     const c = compareToBaseline({ q07: runs(true) }, { q07: runs(false) }, ["q07"], []);
     expect(c.improvements).toEqual(["q07"]);
     expect(c.regressions).toEqual([]);
+  });
+});
+
+describe("deterministic and judge checks", () => {
+  const run = (...checks: Array<[string, boolean | null]>) => ({ checks: checks.map(([name, pass]) => ({ name, pass })) });
+
+  it("a judge miss never fails a run", () => {
+    expect(deterministicPass(run(["outcome", true], ["citations", true], ["grounded", false]).checks)).toBe(true);
+    expect(deterministicPass(run(["outcome", true], ["acknowledges limit", null]).checks)).toBe(true);
+  });
+
+  it("any deterministic miss fails a run, including a pipeline crash and an unknown verdict", () => {
+    expect(deterministicPass(run(["outcome", true], ["path", false], ["grounded", true]).checks)).toBe(false);
+    expect(deterministicPass(run(["pipeline", false]).checks)).toBe(false);
+    expect(deterministicPass(run(["citations", null]).checks)).toBe(false);
+  });
+
+  it("counts judge verdicts over runs, keeping unknown apart from failed", () => {
+    const runs = [
+      run(["outcome", false], ["grounded", true], ["acknowledges limit", true]),
+      run(["grounded", false]),
+      run(["grounded", null]),
+      run(["outcome", true]),
+    ];
+    expect(judgeRate(runs)).toEqual({ passed: 2, failed: 1, unknown: 1 });
+    expect(judgeRate(runs, "grounded")).toEqual({ passed: 1, failed: 1, unknown: 1 });
+    expect(judgeRate(runs, "acknowledges limit")).toEqual({ passed: 1, failed: 0, unknown: 0 });
+    expect(judgeRate([])).toEqual({ passed: 0, failed: 0, unknown: 0 });
+  });
+
+  it("knows which checks are graded by the judge", () => {
+    expect(isJudgeCheck("grounded")).toBe(true);
+    expect(isJudgeCheck("acknowledges limit")).toBe(true);
+    for (const name of ["outcome", "path", "exact text", "citations", "quotes verbatim", "sources", "pipeline"]) {
+      expect(isJudgeCheck(name)).toBe(false);
+    }
+  });
+});
+
+describe("questions quoted in the prompts", () => {
+  const prompt = `statistics: "how many", counts. Also "what do guests complain about MOST" and "How many reviews mention the thermal pool?" is statistics.`;
+
+  it("finds the longest run of shared words, ignoring case and punctuation", () => {
+    expect(longestSharedRun("What do guests complain about most?", prompt)).toBe(6);
+    expect(longestSharedRun("How many reviews mention the thermal pool?", prompt)).toBe(7);
+    expect(longestSharedRun("Do guests complain about most things at the lodge?", prompt)).toBe(5);
+    expect(longestSharedRun("Is breakfast included?", prompt)).toBe(1);
+    expect(longestSharedRun("Zzz qqq", prompt)).toBe(0);
+  });
+
+  it("matches whole words only", () => {
+    expect(longestSharedRun("count", prompt)).toBe(0); // the prompt says "counts"
+    expect(longestSharedRun("counts", prompt)).toBe(1);
+  });
+
+  it("treats a question as quoted from five shared words in a row", () => {
+    expect(PROMPT_OVERLAP_WORDS).toBe(5);
+    expect(quotedInPrompts("What do guests complain about most?", prompt)).toBe(true);
+    expect(quotedInPrompts("Do guests complain about most things?", prompt)).toBe(true);
+    expect(quotedInPrompts("Do guests complain about breakfast?", prompt)).toBe(false); // four in a row
+    expect(quotedInPrompts("Which outlet has the slowest service?", prompt)).toBe(false);
   });
 });

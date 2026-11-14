@@ -21,7 +21,7 @@ import {
 import { themeGuideText } from "./themeGuide";
 import { localToday } from "./today";
 
-function plannerPrompt(properties: string[], today: string): string {
+export function plannerPrompt(properties: string[], today: string): string {
   return `You route questions for HospitalityIQ, an assistant that answers marketing questions from guest reviews of our hospitality properties.
 
 Today is ${today}.
@@ -75,7 +75,7 @@ export async function planQuery(
 const RouteOutputSchema = PlannerOutputSchema.pick({ route: true, stat: true });
 type RouteOutput = Pick<PlannerOutput, "route" | "stat">;
 
-function routePrompt(): string {
+export function routePrompt(): string {
   return `You decide whether a marketing question about guest reviews of our hospitality properties wants an exact count, and of what. Another step handles everything else (search terms, filters, dates).
 
 route (use retrieval for anything that is not about what guests say in reviews: revenue, bookings, campaigns, off-topic)
