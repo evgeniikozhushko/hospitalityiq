@@ -145,7 +145,7 @@ describe("quotes, names, forbidden text", () => {
     });
     it("does not flag the prose between a short and a long curly quote", () => {
       expect(
-        unmatchedQuotes(`Guests praise the “stunning mountain views,” “warm”${prose}`, withWarm),
+        unmatchedQuotes(`Guests praise the “stunning mountain views,” “warm”${prose}${tailCurly}`, withWarm),
       ).toEqual([]);
     });
     it("still flags a long invented quote that follows a short one", () => {

@@ -10,8 +10,8 @@ export const qdrantIndex: VectorIndex = {
     });
   },
 
-  // overwrite_payload, not set_payload: set_payload merges, so a field removed in
-  // Postgres (e.g. an owner reply) would stay searchable.
+  // overwrite_payload, not set_payload: set_payload merges, so a field dropped from
+  // the payload (as the owner reply was) would stay on the point.
   async overwritePayload(items) {
     if (items.length === 0) return;
     await qdrant.batchUpdate(COLLECTION, {

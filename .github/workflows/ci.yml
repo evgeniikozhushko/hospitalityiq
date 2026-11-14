@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      # The disposable test database (docker-compose.yml, postgres-test). Tests reset it.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: hiq_migrator
+          POSTGRES_PASSWORD: hiq_test
+          POSTGRES_DB: hiq_test
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U hiq_migrator -d hiq_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      # Throwaway credentials for the service above. No OpenAI key and no Qdrant:
+      # nothing in the test suite calls either, and the paid eval is run by hand.
+      DATABASE_URL_TEST: postgres://hiq_migrator:hiq_test@localhost:5434/hiq_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm test

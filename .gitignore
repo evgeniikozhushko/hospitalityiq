@@ -42,5 +42,5 @@ next-env.d.ts
 qdrant_storage/
 !.env.example
 
-# eval output (evals/baseline.json is committed on purpose)
+# eval output (saved runs in evals/baselines/ are committed on purpose)
 /evals/results/

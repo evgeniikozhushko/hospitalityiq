@@ -66,5 +66,3 @@ export const searchReviews: RetrieveDeps["search"] = async ({ vector, filter, li
     payload: (p.payload ?? {}) as Record<string, unknown>,
   }));
 };
-
-export { pointIdFor } from "./pointId";

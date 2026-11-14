@@ -1,7 +1,9 @@
 /**
- * The Qdrant payload for a review, built from Postgres rows. Same fields as
- * ReviewRecord (so search, filters and evals keep working) plus textHash, which
- * lets reconciliation compare content across the two stores.
+ * The Qdrant payload for a review, built from Postgres rows: the sanitized text, the
+ * metadata search filters on, and textHash, which lets reconciliation compare content
+ * across the two stores. No reviewer field: guest identity never enters the index.
+ * No owner reply either: nothing reads it from the index, and replies are often signed
+ * with staff names. It stays in Postgres.
  */
 import { createHash } from "node:crypto";
 
@@ -13,7 +15,6 @@ export type IndexRow = {
   property_type: string;
   rating: number;
   text: string;
-  owner_reply: string | null;
   created_at: Date;
   text_hash: string;
 };
@@ -26,7 +27,6 @@ export type IndexPayload = {
   rating: number;
   month: number;
   text: string;
-  ownerReply?: string;
   createdAt: string;
   source: string;
   textHash: string;
@@ -36,7 +36,7 @@ export const sha256 = (s: string) => createHash("sha256").update(s).digest("hex"
 export const hashText = (text: string | null | undefined) => sha256(text ?? "");
 
 export function buildPayload(row: IndexRow): IndexPayload {
-  const payload: IndexPayload = {
+  return {
     reviewId: row.source_review_id,
     locationId: row.location_id,
     propertyName: row.property_name,
@@ -49,8 +49,6 @@ export function buildPayload(row: IndexRow): IndexPayload {
     source: row.source,
     textHash: row.text_hash,
   };
-  if (row.owner_reply) payload.ownerReply = row.owner_reply;
-  return payload;
 }
 
 /** Stable hash: keys sorted, so field order never changes it. */
@@ -67,7 +65,7 @@ export const NOT_INDEXABLE_SQL = "(r.deleted_at IS NOT NULL OR NOT r.has_text OR
 
 export const INDEX_ROWS_SQL = `
   SELECT r.source, r.source_review_id, p.location_id, p.name AS property_name,
-         p.type AS property_type, r.rating::int AS rating, r.text, r.owner_reply,
+         p.type AS property_type, r.rating::int AS rating, r.text,
          r.created_at, r.text_hash, r.indexed_text_hash, r.indexed_payload_hash, r.id
   FROM reviews r JOIN properties p ON p.id = r.property_id
   WHERE r.source = $1 AND ${INDEXABLE_SQL}
