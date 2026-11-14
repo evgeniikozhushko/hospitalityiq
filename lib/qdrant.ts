@@ -3,9 +3,13 @@ import { env } from "./env";
 import { EMBEDDING_DIMENSIONS } from "./openai";
 import type { RetrieveDeps } from "./retrieve";
 
+/** The client default is 5 minutes: far longer than a question should wait. */
+export const QDRANT_TIMEOUT_MS = 15_000;
+
 export const qdrant = new QdrantClient({
   url: env.QDRANT_URL,
   apiKey: env.QDRANT_API_KEY || undefined,
+  timeout: QDRANT_TIMEOUT_MS,
 });
 
 export const COLLECTION = env.QDRANT_COLLECTION;
@@ -40,17 +44,13 @@ export async function ensureCollection() {
   }
 }
 
-let propertiesCache: string[] | null = null;
-
 /**
  * Distinct property names in the index (via the propertyName keyword index).
- * Cached per process; restart after ingesting new properties.
+ * Not cached here: lib/properties.ts decides what is cached and for how long.
  */
-export async function listProperties(): Promise<string[]> {
-  if (propertiesCache) return propertiesCache;
+export async function indexedProperties(): Promise<string[]> {
   const { hits } = await qdrant.facet(COLLECTION, { key: "propertyName", limit: 1000 });
-  propertiesCache = hits.map((h) => String(h.value)).sort();
-  return propertiesCache;
+  return hits.map((h) => String(h.value));
 }
 
 /** Vector search used by retrieve(); query() replaced search() in client v1.20. */
