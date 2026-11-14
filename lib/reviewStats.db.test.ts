@@ -30,6 +30,7 @@ import {
   type StatsScope,
 } from "./reviewStats";
 import { EMPTY_FILTERS, LocationReviewsSchema, type QueryFilters } from "./schema";
+import { renderStats } from "./statsAnswer";
 import { z } from "zod";
 
 const url = testDatabaseUrl();
@@ -131,6 +132,61 @@ describe.skipIf(!url)("review statistics (database)", () => {
       expect([t.current.total.count, t.previous.total.count]).toEqual([2, 3]);
       expect(t.change.absolute).toBe(-1);
       expect(t.change.percent).toBeCloseTo(-33.33, 1);
+      // Feb: L04 L05 L06 L10 tagged, 2 mention parking. Jan 4-31: L01 L02 L03 tagged, all 3 mention it.
+      expect([t.current.total.coverage.currentTagged, t.previous.total.coverage.currentTagged]).toEqual([4, 3]);
+      expect(t.change.currentShare).toBe(0.5);
+      expect(t.change.previousShare).toBe(1);
+      expect(t.change.sharePoints).toBe(-50);
+    });
+
+    it("above the threshold: more mentions over many more tagged reviews is a falling share", async () => {
+      // A separate property, so the numbers above are untouched. Worked out by hand:
+      //   Feb 2026: 60 reviews, the first 50 tagged, the first 12 of those mention parking -> 12 of 50 (24%)
+      //   Jan 4-31: 20 reviews, all tagged, the first 10 mention parking                   -> 10 of 20 (50%)
+      const day = (month: string, i: number) => `2026-${month}-${String(4 + (i % 24)).padStart(2, "0")}T18:00:00Z`;
+      const make = (prefix: string, month: string, n: number) =>
+        Array.from({ length: n }, (_, i) => ({
+          reviewId: `${prefix}${String(i).padStart(2, "0")}`,
+          starRating: "FOUR" as const,
+          comment: `Trend review ${prefix}${i}`,
+          createTime: day(month, i),
+        }));
+      const feb = make("TF", "02", 60);
+      const jan = make("TJ", "01", 20);
+      await importLocations(
+        admin,
+        [{ locationId: "loc-trend", propertyName: "Trend Hotel", propertyType: "hotel", reviews: [...feb, ...jan] }],
+        { source: SRC },
+      );
+      const tag = async (ids: string[], mentioning: number) => {
+        for (const [i, sourceReviewId] of ids.entries()) {
+          await replaceTagSet(admin, {
+            source: SRC,
+            sourceReviewId,
+            tagSource: "manual",
+            taxonomyVersion: "v1",
+            tags: i < mentioning ? [{ theme: "parking", sentiment: "negative" }] : [],
+          });
+        }
+      };
+      await tag(feb.slice(0, 50).map((r) => r.reviewId), 12);
+      await tag(jan.map((r) => r.reviewId), 10);
+
+      const filters = { propertyNames: ["Trend Hotel"], since: "2026-02-01", until: "2026-02-28" };
+      const t = await themeTrend(ro, scope(filters), { theme: "parking" });
+      expect([t.current.total.count, t.current.total.coverage.currentTagged]).toEqual([12, 50]);
+      expect([t.previous.total.count, t.previous.total.coverage.currentTagged]).toEqual([10, 20]);
+      expect(t.change).toEqual({ absolute: 2, percent: 20, currentShare: 0.24, previousShare: 0.5, sharePoints: -26 });
+
+      const text = renderStats(
+        { kind: "trend", query: { kind: "trend", theme: "parking", sentiment: null, filters: { ...EMPTY_FILTERS, ...filters } }, result: t },
+        { themes: [{ slug: "parking", label: "Parking" }], provisional: false },
+      );
+      expect(text).toContain("2026-02-01 to 2026-02-28: 12 of 50 tagged reviews mention Parking (60 reviews in scope: 50 tagged, 10 not yet tagged).");
+      expect(text).toContain("2026-01-04 to 2026-01-31: 10 of 20 tagged reviews mention Parking (20 reviews in scope, all tagged).");
+      expect(text).toContain(
+        "Change: 24% of tagged reviews now, 50% before (-26 points). Mentions: +2. The two periods have different numbers of tagged reviews, so compare the shares, not the counts.",
+      );
     });
 
     it("all properties, with total review counts for both windows", async () => {

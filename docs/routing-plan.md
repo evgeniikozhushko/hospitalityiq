@@ -60,7 +60,7 @@ Deferred: count-plus-quotations hybrid answers, several themes in one question, 
    - **Property comparisons** are ordered by count (as asked), and every row shows its share of tagged reviews: "Lodge: 12 of 300 tagged reviews (4%)". No re-ranking by share.
    - **Theme rankings exclude `other`** (`themeRanking` already does) and the rendered text says so: "Mentions outside the listed themes are not ranked."
    - **Ties are stated, not ranked.** When themes share the top count the answer says so ("Front desk, Housekeeping and Parking are tied at the top, with 1 each."), and any tie in the list adds "Tied themes are listed alphabetically.", so a numbered list never implies one theme leads.
-   - **Trends** show both periods with their own window, count and tagged total. The percent change is shown only when both periods have at least `MIN_TREND_MENTIONS` (10) mentions; otherwise a fixed sentence: "Too few mentions to show a reliable change."
+   - **Trends** show both periods with their own window, count and tagged total. The change is shown only when both periods have at least `MIN_TREND_MENTIONS` (10) mentions; otherwise a fixed sentence: "Too few mentions to show a reliable change." The change compares the **share of tagged reviews** in each period ("24% of tagged reviews now, 50% before (-26 points)"), then the difference in mentions, with a warning when the periods have different tagged totals. Revised 2026-11-14: the first version reported the relative change in raw counts, so 20 of 200 against 10 of 50 read as "+100%" while the share halved.
 
 7. **Read-only connection in the app.** `lib/db/readonlyPool.ts` builds a `pg` Pool lazily from `DATABASE_URL_READONLY`, cached on `globalThis` so Next dev reloads do not leak connections. Two kinds of failure, handled differently:
    - **Infrastructure** (variable missing, database down, timeout, connection refused): the question falls back to retrieval with a note that exact counts are unavailable right now; the error is logged on the server, never shown.
@@ -89,7 +89,7 @@ Reported in three separate groups, so a statistics win cannot hide a retrieval r
 
 **Saved runs.** All live in `evals/baselines/`. `pre-statistics-routing.json` is the reference for group 1. `post-statistics-routing.json` is the first run with routing (above). `initial-retrieval-only.json` is the older first run (dataset `944313d3003b`, 19/25), moved from `evals/baseline.json`. `npm run eval -- --baseline <name>` saves a new run as `evals/baselines/<name>.json` and refuses to overwrite one.
 
-**What the eval cannot reach.** With 8 fixtures and `MIN_TREND_MENTIONS = 10`, every trend case renders "Too few mentions to show a reliable change". The percent-change path is covered by the `renderStats` unit tests only, until real data arrives.
+**What the eval cannot reach.** With 8 fixtures and `MIN_TREND_MENTIONS = 10`, every trend case renders "Too few mentions to show a reliable change". The change path is covered by the `renderStats` unit tests and one database test with generated reviews (`lib/reviewStats.db.test.ts`), until real data arrives.
 
 Across every case answered on the retrieval route, a new judge rubric item asks: "Does the answer state a number of reviews or mentions as if it covered all reviews, rather than the sample?" Failures are counted and reported (target 0).
 

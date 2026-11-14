@@ -87,7 +87,10 @@ async function main() {
       printMentions(t.current, `CURRENT ${t.current.window.since}..${t.current.window.until}: ${t.theme} in ${t.current.scopeLabel}`);
       printMentions(t.previous, `PREVIOUS ${t.previous.window.since}..${t.previous.window.until}`);
       const pct = t.change.percent === null ? "n/a (previous period had none)" : `${t.change.percent.toFixed(1)}%`;
-      console.log(`Change: ${t.change.absolute >= 0 ? "+" : ""}${t.change.absolute} (${pct})`);
+      console.log(`Change in mentions: ${t.change.absolute >= 0 ? "+" : ""}${t.change.absolute} (${pct})`);
+      const share = (s: number | null) => (s === null ? "n/a (no tagged reviews)" : `${(s * 100).toFixed(1)}%`);
+      const points = t.change.sharePoints === null ? "n/a" : `${t.change.sharePoints >= 0 ? "+" : ""}${t.change.sharePoints.toFixed(1)} points`;
+      console.log(`Share of tagged reviews: ${share(t.change.currentShare)} now, ${share(t.change.previousShare)} before (${points})`);
     } else {
       console.log("Commands: mentions | top | trend. See the header of scripts/stats.ts.");
       process.exitCode = 1;

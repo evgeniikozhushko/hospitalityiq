@@ -46,5 +46,5 @@ _Avoid_: Estimate, tally (for sampled numbers)
 The handful of most relevant reviews that a qualitative answer is based on. A number seen in a sample is never presented as a count.
 
 **Trend**:
-A comparison of the count in one continuous date range with the count in the range of equal length immediately before it.
+A comparison of one continuous date range with the range of equal length immediately before it. The change is stated as the share of tagged reviews that mention the theme in each range, because the two ranges rarely hold the same number of tagged reviews; the difference in counts is shown beside it.
 _Avoid_: Change over time (for seasonal or month-filtered comparisons)

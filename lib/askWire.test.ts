@@ -36,7 +36,7 @@ const statsTrend = {
       sentiment: "negative",
       current: { ...mentions, window: { since: "2025-11-10", until: "2026-11-10" } },
       previous: { ...mentions, window: { since: "2024-11-10", until: "2025-11-09" } },
-      change: { absolute: 0, percent: null },
+      change: { absolute: 0, percent: null, currentShare: 0.25, previousShare: null, sharePoints: null },
     },
   },
 };
