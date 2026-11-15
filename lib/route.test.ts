@@ -16,6 +16,7 @@ const stat = (s: Partial<StatRequest> = {}): StatRequest => ({
   themes: ["parking"],
   topic: "parking",
   sentiment: null,
+  ranks: null,
   ...s,
 });
 
@@ -114,6 +115,34 @@ describe("resolveRoute: statistics", () => {
   it("treats theme slugs case-insensitively and trims them", () => {
     const d = resolveRoute(plan({ stat: stat({ themes: [" Parking "] }) }), THEMES, TODAY);
     expect(d.route === "statistics" && d.query.kind === "mentions" && d.query.theme).toBe("parking");
+  });
+});
+
+describe("resolveRoute: what a ranking ranks", () => {
+  it("ranks themes when the planner says so", () => {
+    const d = resolveRoute(plan({ stat: stat({ kind: "ranking", themes: null, ranks: "themes" }) }), THEMES, TODAY);
+    expect(d.route === "statistics" && d.query.kind).toBe("ranking");
+  });
+
+  it("turns a property ranking for one theme into a per-property count", () => {
+    const d = resolveRoute(
+      plan({ stat: stat({ kind: "ranking", themes: ["housekeeping"], ranks: "properties", sentiment: "negative" }) }),
+      THEMES,
+      TODAY,
+    );
+    expect(d).toEqual({
+      route: "statistics",
+      query: { kind: "mentions", theme: "housekeeping", sentiment: "negative", filters: EMPTY_FILTERS },
+    });
+  });
+
+  it("never answers a property question with a theme ranking", () => {
+    // "Which property gets the most complaints?": the planner may say ranking or mentions.
+    for (const kind of ["ranking", "mentions"] as const) {
+      const f = fallbackOf(plan({ stat: stat({ kind, themes: [], topic: "complaints", ranks: "properties", sentiment: "negative" }) }));
+      expect(f.code).toBe("property_needs_theme");
+      expect(f.note).toMatch(/one theme at a time, for example "which property gets the most parking complaints"/);
+    }
   });
 });
 

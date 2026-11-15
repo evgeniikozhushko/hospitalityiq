@@ -25,7 +25,7 @@ const statsPlan = (p: Partial<PlannerOutput> = {}): PlannerOutput => ({
   searchQuery: "parking",
   filters: EMPTY_FILTERS,
   route: "statistics",
-  stat: { kind: "mentions", themes: ["parking"], topic: "parking", sentiment: null },
+  stat: { kind: "mentions", themes: ["parking"], topic: "parking", sentiment: null, ranks: null },
   ...p,
 });
 
@@ -126,7 +126,7 @@ describe("answerWith: gate fallbacks use the themes from the database", () => {
   } as unknown as StatsDb;
 
   it("falls back with the gate's note for a topic narrower than a theme", async () => {
-    const d = deps(statsPlan({ stat: { kind: "mentions", themes: [], topic: "breakfast", sentiment: null } }), {
+    const d = deps(statsPlan({ stat: { kind: "mentions", themes: [], topic: "breakfast", sentiment: null, ranks: null } }), {
       statsDb: vi.fn(() => themesDb),
     });
     const { text } = await run(d);

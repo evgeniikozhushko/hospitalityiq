@@ -41,3 +41,15 @@ export function judgeGrounded(answer: string, reviews: string): Promise<JudgeRes
     `Reviews:\n${reviews}\n\nAnswer:\n${answer}`,
   );
 }
+
+/**
+ * Does a sample-based answer avoid stating a number as if it covered all reviews?
+ * (docs/routing-plan.md, Eval). pass=true means no such claim. Only used on answers
+ * built from a sample of reviews; exact counts come from the statistics route.
+ */
+export function judgeNoSampleCounts(answer: string): Promise<JudgeResult> {
+  return judge(
+    "You grade answers from a review-analysis assistant that reads only a SAMPLE of the most relevant reviews, never all of them. Reply pass=false if the answer states a number of reviews, guests or mentions as if it were a count over all reviews (for example \"only one review mentions parking\", \"most guests\", \"3 reviews complain\", \"no other reviews mention it\") without saying the number comes from the sample shown. Reply pass=true if it gives no such number, or clearly ties every number to the sample (for example \"among the 8 most relevant reviews\"). Citation numbers like [2] are not counts. Keep reason to one sentence.",
+    `Answer:\n${answer}`,
+  );
+}

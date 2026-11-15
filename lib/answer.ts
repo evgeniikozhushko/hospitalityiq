@@ -6,7 +6,7 @@ import { answerWith, type AnswerEvent } from "./answerPipeline";
 import { readonlyPool } from "./db/readonlyPool";
 import { env } from "./env";
 import { embed, openai } from "./openai";
-import { planQuery } from "./plan";
+import { planAndRoute } from "./plan";
 import { listProperties, searchReviews } from "./qdrant";
 import { retrieve } from "./retrieve";
 import { statsSettings } from "./statsSettings";
@@ -17,7 +17,7 @@ export type { AnswerEvent } from "./answerPipeline";
 export function answerQuestion(question: string, opts: { today?: string } = {}): AsyncGenerator<AnswerEvent> {
   return answerWith(question, {
     listProperties,
-    plan: planQuery,
+    plan: planAndRoute,
     retrieve: (plan) => retrieve(plan, { embed, search: searchReviews }),
     async *streamAnswer({ instructions, input }) {
       const stream = openai.responses.stream({ model: env.OPENAI_CHAT_MODEL, instructions, input });

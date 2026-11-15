@@ -171,16 +171,16 @@ Value is measured as hours saved × hourly cost (illustration: 5 h/week at $35/h
 - `scripts/search.ts`: dense-only retrieval from the terminal (working)
 - `data/sample-reviews.json`: fictional test fixture shaped like the Google API output; to be replaced by real reviews
 - Answer pipeline: `lib/plan.ts` (intent, filters), `lib/filters.ts`, `lib/retrieve.ts` (with relaxed retry), `lib/answer.ts` (cited, streamed), `POST /api/ask`, `npm run ask`
-- Eval harness: `evals/dataset.json` (21 labelled cases), `scripts/eval.ts` (`npm run eval`), `lib/evalMetrics.ts` + tests, `lib/evalJudge.ts`; first numbers in `evals/baseline.json`
+- Eval harness: `evals/dataset.json` (42 labelled cases in three groups: regression, statistics, boundary), `scripts/eval.ts` (`npm run eval`), `lib/evalMetrics.ts` + tests, `lib/evalJudge.ts`. Saved runs live in `evals/baselines/`: `initial-retrieval-only.json` (first numbers) and `pre-statistics-routing.json` (the reference for the regression group)
 - `evals/test-questions.md`: original draft questions (superseded by `dataset.json`)
 - `docs/gbp-api-access.md`: API access checklist
+- Statistics routing: count, ranking and trend questions are answered exactly from Postgres, with text written by code, never the model; everything qualitative stays on Qdrant. Design, decisions and eval: `docs/routing-plan.md`, `docs/adr/0001-counts-never-pass-through-the-model.md`, terms in `GLOSSARY.md`
 - Postgres foundation (local, Docker Compose): plain-SQL migrations, read-only role, `reviews` / `review_tagging` / `review_themes`, Postgres-first ingest with Qdrant sync, `reconcile` / `reindex`, and fixed parameterized statistics queries (`lib/reviewStats.ts`, `npm run stats`). Tags are provisional hand tags and synthetic practice data. Design and as-built differences: `docs/sql-plan.md`
 
 **Next**
-1. Fix what the eval baseline found (see `evals/baseline.json`), then re-baseline on real reviews
+1. Fix what the eval found (latest run in `evals/results/latest.json`, saved runs in `evals/baselines/`), then re-baseline on real reviews
 2. Theme taxonomy, agreed with marketing
-3. Route count and trend questions to the SQL statistics (router + planner filters), then AI theme tagging validated against a hand-labelled set
+3. AI theme tagging validated against a hand-labelled set (statistics routing is done; counts are only as good as the tags)
 4. Qdrant collection redesign with named dense + sparse vectors
-5. Router schema (route + extracted filters)
-6. Re-label the eval dataset against real reviews when they arrive (current labels use 8 fictional reviews)
-7. When connecting the Google Business Profile API, map each location to a `propertyType` (hotel, restaurant, spa). GBP does not supply it, and the planner's type filter depends on it. Company aliases (BCP, Banff Caribou Properties) live in `COMPANY_ALIASES` in `lib/filters.ts`
+5. Re-label the eval dataset against real reviews when they arrive (current labels use 8 fictional reviews)
+6. When connecting the Google Business Profile API, map each location to a `propertyType` (hotel, restaurant, spa). GBP does not supply it, and the planner's type filter depends on it. Company aliases (BCP, Banff Caribou Properties) live in `COMPANY_ALIASES` in `lib/filters.ts`

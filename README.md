@@ -79,7 +79,7 @@ Integration tests use the disposable instance and are skipped unless `DATABASE_U
 
 ## Status
 
-Dense-only retrieval, cited answers (`npm run ask`) and an eval harness (`npm run eval`) work. The local Postgres foundation (exact review counts and trends via `npm run stats`) is in place. Next up: routing count and trend questions to it, AI theme tagging, fixing what the eval baseline found, theme taxonomy, and hybrid (dense + sparse) search. The full status and roadmap are in [section 12 of the project scope](docs/project-scope.md#12-current-build-status).
+Dense-only retrieval, cited answers (`npm run ask`) and an eval harness (`npm run eval`) work. Count, ranking and trend questions ("how many reviews mention parking?") are answered exactly from the local Postgres statistics, with the numbers written by code; qualitative questions stay on cited retrieval. Next up: AI theme tagging, fixing what the eval found, theme taxonomy, and hybrid (dense + sparse) search. The full status and roadmap are in [section 12 of the project scope](docs/project-scope.md#12-current-build-status).
 
 ## Data protection
 
