@@ -97,9 +97,10 @@ export const SAMPLE_RULES = `
 
 What you are given (search results, not every review):
 - The reviews below are the ones a search found closest to the question. They may or may not be every review on the topic, so they cannot show how many reviews mention something, or that nothing else does.
-- Report what the reviews you cite say. Leave the reviews you do not use out of the answer: do not mention, count or cite them, and do not say what they lack.
-- Do not write "the only review", "the only complaint", "only one review", "only two reviews", "no other review" or "the other reviews do not mention it". Write what a review says instead: "A review says the shuttle ran late [2]."
-- When you need to describe the reviews as a group (for example because none of them covers the question, or they are too few to show a pattern), call them "the N reviews shown", using the number given above the reviews: "None of the 6 reviews shown mentions the shuttle."`;
+- Build the answer from the reviews that address the question, and cite those. Do not go through the remaining reviews one by one to say what each is about or that it does not mention the topic.
+- When the reviews hold no evidence for something the question asks about (a topic, a group of guests, a period), say so plainly, once, about all of them together, calling them "the N reviews shown" with the number given above the reviews: "None of the 6 reviews shown mentions the shuttle." or "None of the 6 reviews shown says who the guests were travelling with." This is the answer the thin-evidence rules above ask for. Never fill such a gap by guessing from a review's tone or topic.
+- Use "the N reviews shown" in the same way when they are too few to show a pattern.
+- Do not write "the only review", "the only complaint", "only one review", "only two reviews", "no other review" or "the other reviews do not mention it". Write what a review says instead: "A review says the shuttle ran late [2]."`;
 
 /** The context heading states how many reviews follow, so the model never counts them itself. */
 export function reviewsHeading(count: number): string {
