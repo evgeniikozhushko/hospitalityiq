@@ -198,20 +198,23 @@ describe.skipIf(!url)("ingest (database)", () => {
     expect(index.points.get(pointIdForReview(SRC, "r1"))!.payload.rating).toBe(2);
   });
 
-  it("a removed owner reply disappears from the point, and a changed one updates", async () => {
+  it("an owner reply is kept in Postgres and never reaches the index", async () => {
     const withReply = (text: string) => ({ reviewReply: { comment: text, updateTime: "2026-01-15T10:00:00Z" } });
     const id = pointIdForReview(SRC, "r1");
-    await importLocations(c, [lodge([review("r1", withReply("Thanks for staying"))])]);
+    const stored = async () =>
+      (await c.query<{ owner_reply: string | null }>("SELECT owner_reply FROM reviews WHERE source_review_id = 'r1'")).rows[0].owner_reply;
+    await importLocations(c, [lodge([review("r1", withReply("Thanks for staying, Sarah"))])]);
     await syncIndex(c, index, embed, SRC);
-    expect(index.points.get(id)!.payload.ownerReply).toBe("Thanks for staying");
-
-    await importLocations(c, [lodge([review("r1", withReply("Updated reply"))])]);
-    expect(await syncIndex(c, index, embed, SRC)).toMatchObject({ embedded: 0, payloadRefreshed: 1 });
-    expect(index.points.get(id)!.payload.ownerReply).toBe("Updated reply");
-
-    await importLocations(c, [lodge([review("r1")])]);
-    expect(await syncIndex(c, index, embed, SRC)).toMatchObject({ embedded: 0, payloadRefreshed: 1 });
+    expect(await stored()).toBe("Thanks for staying, Sarah");
+    expect(JSON.stringify(index.points.get(id)!.payload)).not.toContain("Sarah");
     expect("ownerReply" in index.points.get(id)!.payload).toBe(false);
+
+    // A changed or removed reply changes nothing the index holds: no re-embed, no refresh.
+    await importLocations(c, [lodge([review("r1", withReply("Updated reply"))])]);
+    expect(await syncIndex(c, index, embed, SRC)).toMatchObject({ embedded: 0, payloadRefreshed: 0 });
+    await importLocations(c, [lodge([review("r1")])]);
+    expect(await syncIndex(c, index, embed, SRC)).toMatchObject({ embedded: 0, payloadRefreshed: 0 });
+    expect(await stored()).toBeNull();
     expect((await reconcile(c, index, SRC)).ok).toBe(true);
   });
 

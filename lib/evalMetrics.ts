@@ -320,3 +320,69 @@ export function compareToBaseline(
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Deterministic checks and judge checks
+// ---------------------------------------------------------------------------
+
+/**
+ * Checks graded by an LLM judge. Their verdict varies from run to run on the same
+ * answer, so they are reported as a pass rate and never decide whether a case, the
+ * regression comparison or the process exit code passes. Everything else is
+ * deterministic: the same answer always gets the same verdict.
+ */
+export const JUDGE_CHECKS: ReadonlySet<string> = new Set(["acknowledges limit", "grounded"]);
+
+export const isJudgeCheck = (name: string) => JUDGE_CHECKS.has(name);
+
+export type ScoredCheck = { name: string; pass: boolean | null };
+
+/** True when every deterministic check of the run passed. Works on saved runs too. */
+export function deterministicPass(checks: ScoredCheck[]): boolean {
+  return checks.filter((c) => !isJudgeCheck(c.name)).every((c) => c.pass === true);
+}
+
+export type PassRate = { passed: number; failed: number; unknown: number };
+
+/** Judge verdicts over a set of runs. `unknown` is a judge that errored or returned nothing. */
+export function judgeRate(runs: Array<{ checks: ScoredCheck[] }>, name?: string): PassRate {
+  const cs = runs.flatMap((r) => r.checks.filter((c) => isJudgeCheck(c.name) && (!name || c.name === name)));
+  return {
+    passed: cs.filter((c) => c.pass === true).length,
+    failed: cs.filter((c) => c.pass === false).length,
+    unknown: cs.filter((c) => c.pass === null).length,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Questions quoted in the prompts
+// ---------------------------------------------------------------------------
+
+/** A question sharing this many consecutive words with a prompt counts as quoted in it. */
+export const PROMPT_OVERLAP_WORDS = 5;
+
+const words = (s: string) => s.toLowerCase().match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu) ?? [];
+
+/**
+ * The longest run of consecutive words the question shares with the prompt text.
+ * Punctuation and case are ignored, so a prompt example in quotes still matches.
+ */
+export function longestSharedRun(question: string, promptText: string): number {
+  const q = words(question);
+  const hay = ` ${words(promptText).join(" ")} `;
+  for (let n = q.length; n >= 1; n--) {
+    for (let i = 0; i + n <= q.length; i++) {
+      if (hay.includes(` ${q.slice(i, i + n).join(" ")} `)) return n;
+    }
+  }
+  return 0;
+}
+
+/**
+ * A prompt that quotes an eval question as an example has, in effect, been told the
+ * answer, so a pass on that question shows the model can read the prompt, not that
+ * the rule generalises. Those cases are reported apart from the rest.
+ */
+export function quotedInPrompts(question: string, promptText: string): boolean {
+  return longestSharedRun(question, promptText) >= PROMPT_OVERLAP_WORDS;
+}

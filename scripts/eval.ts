@@ -11,29 +11,44 @@
  *
  * Cases are reported in three groups (docs/routing-plan.md, Eval), so a statistics win
  * cannot hide a retrieval regression:
- *   regression  scored exactly as before, compared case by case with REGRESSION_BASELINE
+ *   regression  compared case by case with REGRESSION_BASELINE
  *   statistics  path and exact numbers (hand-computed from data/manual-tags.json)
  *   boundary    path only: questions that must stay on retrieval or fall back honestly
- * A case passes only when it passes every run.
+ *
+ * Two kinds of check, scored differently (lib/evalMetrics.ts, JUDGE_CHECKS):
+ *   deterministic  path, exact text, filters, sources, citations, quotes, names. The same
+ *                  answer always gets the same verdict, so a case passes only when these
+ *                  pass in EVERY run, and only these decide the exit code and what counts
+ *                  as a regression.
+ *   judge          grounded, acknowledges limit. An LLM grades them and its verdict varies
+ *                  between runs on unchanged code, so they are reported as a pass rate.
+ *
+ * Routing accuracy is also split by whether a prompt quotes the question as an example:
+ * a pass on a quoted question shows the model read the prompt, not that the rule holds.
  * Needs local Qdrant with data ingested (npm run ingest). LangSmith is optional.
  */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { answerQuestion } from "../lib/answer";
+import { AGGREGATE_RULES, ANSWER_INSTRUCTIONS } from "../lib/answerPipeline";
 import { env } from "../lib/env";
 import { judgeAcknowledges, judgeGrounded, judgeNoSampleCounts, type JudgeResult } from "../lib/evalJudge";
 import {
   checkCitations,
   checkTargets,
   compareToBaseline,
+  deterministicPass,
   filterMismatches,
   forbiddenHits,
+  isJudgeCheck,
+  judgeRate,
   kFor,
   leakedNames,
   mean,
   missingText,
   outcomeOf,
   pathOf,
+  quotedInPrompts,
   recallAtK,
   reciprocalRank,
   sourcesCorrect,
@@ -43,12 +58,11 @@ import {
   type Path,
   type RunTrace,
 } from "../lib/evalMetrics";
+import { plannerPrompt, routePrompt } from "../lib/plan";
 import type { PlannerOutput, QueryFilters } from "../lib/schema";
 
 /** The run the regression group is compared with (committed, never overwritten). */
 const REGRESSION_BASELINE = "evals/baselines/pre-statistics-routing.json";
-/** A known judge miss unrelated to routing, reported apart from the regression check. */
-const REPORT_SEPARATELY = ["q05"];
 
 type Group = "regression" | "statistics" | "boundary";
 
@@ -83,7 +97,10 @@ type RunResult = {
   rr: number;
   sourcesOk: boolean | null;
   checks: Check[];
+  /** Every check passed, judge checks included. Kept so saved runs stay comparable. */
   pass: boolean;
+  /** Every deterministic check passed. This is what a case is scored on. */
+  deterministicPass: boolean;
   /** Judge: does a sample-based answer state a figure as a count? Reported, not part of pass. */
   sampleCount: JudgeResult | null;
   answer: string;
@@ -234,6 +251,7 @@ async function runCase(c: Case): Promise<RunResult> {
     sourcesOk,
     checks,
     pass: checks.every((x) => x.pass === true),
+    deterministicPass: deterministicPass(checks),
     sampleCount,
     answer: t.answer,
     seconds: (Date.now() - started) / 1000,
@@ -262,19 +280,23 @@ async function main() {
         results[c.id].push({
           caseId: c.id, outcome: "answered", path: null, mode: null, retrievedIds: [], recall: NaN, rr: NaN,
           sourcesOk: null, checks: [{ name: "pipeline", pass: false, detail: (err as Error).message }],
-          pass: false, sampleCount: null, answer: "", seconds: 0,
+          pass: false, deterministicPass: false, sampleCount: null, answer: "", seconds: 0,
         });
       }
     }
     const r = results[c.id];
-    const passes = r.filter((x) => x.pass).length;
+    const passes = r.filter((x) => x.deterministicPass).length;
     const paths = [...new Set(r.map((x) => x.path))].join("/");
+    const judged = judgeRate(r);
+    const judgedTotal = judged.passed + judged.failed + judged.unknown;
     console.log(
-      `${passes === r.length ? "PASS" : "FAIL"} ${c.id} ${passes}/${r.length}  [${c.group}, ${paths}]  ${c.question.slice(0, 60)}`,
+      `${passes === r.length ? "PASS" : "FAIL"} ${c.id} ${passes}/${r.length}` +
+        `${judgedTotal ? `  judge ${judged.passed}/${judgedTotal}` : ""}  [${c.group}, ${paths}]  ${c.question.slice(0, 60)}`,
     );
     for (const x of r) {
       for (const ck of x.checks.filter((y) => y.pass !== true)) {
-        console.log(`      - ${ck.name}${ck.pass === null ? " (unknown)" : ""}: ${ck.detail ?? ""}`);
+        const kind = isJudgeCheck(ck.name) ? "judge: " : "";
+        console.log(`      - ${kind}${ck.name}${ck.pass === null ? " (unknown)" : ""}: ${ck.detail ?? ""}`);
       }
     }
   }
@@ -288,7 +310,11 @@ async function main() {
     labelled.map((x) => x.sourcesOk === true),
   );
 
-  const failedCases = Object.entries(results).filter(([, r]) => r.some((x) => !x.pass)).map(([id]) => id);
+  // A case fails on a deterministic check in any run. Judge checks never fail a case.
+  const failedCases = Object.entries(results).filter(([, r]) => r.some((x) => !x.deterministicPass)).map(([id]) => id);
+  const judgeMissCases = Object.entries(results)
+    .filter(([, r]) => r.some((x) => x.checks.some((c) => isJudgeCheck(c.name) && c.pass !== true)))
+    .map(([id]) => id);
   const checkNames = [...new Set(all.flatMap((x) => x.checks.map((c) => c.name)))];
 
   console.log("\nCheck pass rates");
@@ -304,8 +330,38 @@ async function main() {
   for (const t of targets) {
     console.log(`  ${t.pass ? "PASS" : "FAIL"} ${t.name}: ${pct(t.value)} (target ≥ ${t.target})`);
   }
-  const questionsPassed = Object.values(results).filter((r) => r.every((x) => x.pass)).length;
-  console.log(`\nQuestions passing all checks: ${questionsPassed}/${cases.length}`);
+  const questionsPassed = Object.values(results).filter((r) => r.every((x) => x.deterministicPass)).length;
+  console.log(`\nQuestions passing every deterministic check in every run: ${questionsPassed}/${cases.length}`);
+
+  // --- Judge checks: a rate, not a gate ---------------------------------------
+  const judgeNames = checkNames.filter(isJudgeCheck);
+  const judge = Object.fromEntries(judgeNames.map((n) => [n, judgeRate(all, n)]));
+  if (judgeNames.length) {
+    console.log("\nJudge checks (pass rate over runs; do not affect pass/fail or the exit code)");
+    for (const n of judgeNames) {
+      const j = judge[n];
+      const total = j.passed + j.failed + j.unknown;
+      console.log(`  ${n.padEnd(26)} ${j.passed}/${total}${j.unknown ? `  (${j.unknown} unknown: judge unavailable)` : ""}`);
+    }
+    if (judgeMissCases.length) console.log(`  cases with a judge miss in some run: ${judgeMissCases.join(", ")}`);
+  }
+
+  // --- Routing, split by whether a prompt quotes the question -----------------
+  const promptText = [plannerPrompt([], dataset.today), routePrompt(), ANSWER_INSTRUCTIONS, AGGREGATE_RULES].join("\n");
+  const quoted = new Set(cases.filter((c) => quotedInPrompts(c.question, promptText)).map((c) => c.id));
+  const routed = cases.filter((c) => c.expectedPath);
+  const pathRate = (ids: string[]) => {
+    const cs = ids.flatMap((id) => results[id]).flatMap((x) => x.checks.filter((c) => c.name === "path"));
+    return { cases: ids.length, passed: cs.filter((c) => c.pass === true).length, total: cs.length };
+  };
+  const routing = {
+    quotedInPrompts: pathRate(routed.filter((c) => quoted.has(c.id)).map((c) => c.id)),
+    notQuoted: pathRate(routed.filter((c) => !quoted.has(c.id)).map((c) => c.id)),
+  };
+  console.log("\nRouting accuracy (path check, cases with an expected path)");
+  console.log(`  question not quoted in any prompt: ${routing.notQuoted.passed}/${routing.notQuoted.total} runs (${routing.notQuoted.cases} cases)  <- the number to quote`);
+  console.log(`  question quoted in a prompt:       ${routing.quotedInPrompts.passed}/${routing.quotedInPrompts.total} runs (${routing.quotedInPrompts.cases} cases)`);
+  console.log(`  quoted: ${[...quoted].join(", ") || "none"}`);
 
   // --- The three groups -----------------------------------------------------
   const inGroup = (g: Group) => cases.filter((c) => c.group === g).map((c) => c.id);
@@ -314,20 +370,27 @@ async function main() {
     const cs = runsOf(ids).flatMap((x) => x.checks.filter((c) => c.name === name));
     return { passed: cs.filter((c) => c.pass === true).length, total: cs.length };
   };
-  const casesPassing = (ids: string[]) => ids.filter((id) => results[id].every((x) => x.pass)).length;
+  const casesPassing = (ids: string[]) => ids.filter((id) => results[id].every((x) => x.deterministicPass)).length;
 
+  // The saved run stores every check of every run, so its deterministic result is
+  // recomputed here by the same rule: the comparison is like for like.
   const baseline = JSON.parse(readFileSync(REGRESSION_BASELINE, "utf8")) as {
-    results: Record<string, Array<{ pass: boolean }>>;
+    results: Record<string, Array<{ checks: Check[] }>>;
   };
+  const byDeterministic = (rs: Record<string, Array<{ checks: Check[] }>>) =>
+    Object.fromEntries(Object.entries(rs).map(([id, r]) => [id, r.map((x) => ({ pass: deterministicPass(x.checks) }))]));
   const regressionIds = inGroup("regression");
-  const regression = compareToBaseline(results, baseline.results, regressionIds, REPORT_SEPARATELY);
-  console.log(`\n1. Regression (${regressionIds.length} cases, compared with ${REGRESSION_BASELINE})`);
+  const regression = compareToBaseline(byDeterministic(results), byDeterministic(baseline.results), regressionIds, []);
+  const rate = (j: { passed: number; failed: number; unknown: number }) => `${j.passed}/${j.passed + j.failed + j.unknown}`;
+  const regressionJudge = {
+    now: judgeRate(runsOf(regressionIds)),
+    before: judgeRate(regressionIds.flatMap((id) => baseline.results[id] ?? [])),
+  };
+  console.log(`\n1. Regression (${regressionIds.length} cases, deterministic checks compared with ${REGRESSION_BASELINE})`);
   console.log(`  passing: ${regression.passed.length}/${regression.scored.length}`);
   console.log(`  regressions: ${regression.regressions.join(", ") || "none"}`);
   if (regression.improvements.length) console.log(`  improvements: ${regression.improvements.join(", ")}`);
-  for (const s of regression.separate) {
-    console.log(`  ${s.id} (reported separately): ${s.now ? "PASS" : "FAIL"} now, ${s.before ? "PASS" : "FAIL"} before`);
-  }
+  console.log(`  judge checks: ${rate(regressionJudge.now)} runs now, ${rate(regressionJudge.before)} in the saved run (a rate, not a gate)`);
   if (regression.notInBaseline.length) console.log(`  not in the saved run: ${regression.notInBaseline.join(", ")}`);
   const rerouted = regressionIds.filter((id) => results[id].some((x) => x.path !== "retrieval" && x.path !== "declined"));
   if (rerouted.length) console.log(`  took a statistics path in some run: ${rerouted.join(", ")}`);
@@ -371,8 +434,10 @@ async function main() {
       questionsPassed,
       questions: cases.length,
       failedCases,
+      judge: { checks: judge, casesWithAMiss: judgeMissCases },
+      routing: { ...routing, quoted: [...quoted] },
       groups: {
-        regression: { baseline: REGRESSION_BASELINE, ...regression },
+        regression: { baseline: REGRESSION_BASELINE, ...regression, judge: regressionJudge },
         statistics: { cases: statsIds.length, passing: casesPassing(statsIds), path: statsPath, exactText: exact },
         boundary: { cases: boundaryIds.length, passing: casesPassing(boundaryIds), path: boundaryPath },
         sampleCounts: flag("judge") ? { failed: sampleFails.length, judged: judged.length } : null,
@@ -394,6 +459,7 @@ async function main() {
     await new Client().awaitPendingTraceBatches();
   }
 
+  // Deterministic failures and missed targets only: a judge miss is reported above, never fatal.
   const failed = failedCases.length > 0 || targets.some((t) => !t.pass);
   process.exit(failed && !flag("no-fail") ? 1 : 0);
 }

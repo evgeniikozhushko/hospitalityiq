@@ -65,7 +65,13 @@ export const StatsOutcomeWireSchema = z.discriminatedUnion("kind", [
       sentiment: SentimentWire,
       current: PeriodWire,
       previous: PeriodWire,
-      change: z.object({ absolute: z.number(), percent: z.number().nullable() }),
+      change: z.object({
+        absolute: z.number(),
+        percent: z.number().nullable(),
+        currentShare: z.number().nullable(),
+        previousShare: z.number().nullable(),
+        sharePoints: z.number().nullable(),
+      }),
     }),
   }),
 ]);

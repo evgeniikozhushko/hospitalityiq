@@ -16,8 +16,10 @@ See [section 3 of the project scope](docs/project-scope.md#3-capabilities) for t
 
 ## Architecture (summary)
 
-- **Ingest path:** sources (Google reviews, CSV exports, campaign records) → light sanitizing → OpenAI theme tagging validated by Zod → Postgres (records, tags) + Qdrant (embeddings).
-- **Question path:** a router picks SQL on Postgres for counts and trends, or hybrid search on Qdrant for "what did guests say". Answers are written with a citation for every claim and streamed to the chat. LangSmith traces each step.
+What is built today, and what is still planned:
+
+- **Ingest path (built):** Google-shaped review files → light sanitizing → Postgres (reviews, hand-made theme tags) → embeddings in Qdrant, with a reconcile check. **Planned:** the Google Business Profile API and CSV uploads as sources, campaign records, and OpenAI theme tagging validated by Zod (today the only tags are hand tags, so counts cover only hand-tagged reviews).
+- **Question path (built):** a router sends counts, rankings and trends to fixed SQL on Postgres, with the numbers written by code, and "what did guests say" to dense search on Qdrant. Retrieval answers cite a review for every claim and are streamed to the chat. **Planned:** hybrid (dense + sparse) search with reranking, example reviews behind each count, sign-in, and one LangSmith trace per question (today each model call is traced on its own, and only when `LANGSMITH_TRACING=true`).
 
 Details: [section 5 of the project scope](docs/project-scope.md#5-architecture).
 
@@ -31,12 +33,32 @@ Prerequisites: Node.js, npm, Docker (for local Qdrant), and an OpenAI API key.
 
 ```bash
 npm install
+cp .env.example .env.local         # then set OPENAI_API_KEY
+docker start qdrant 2>/dev/null || docker run -d --name qdrant \
+  -p 6333:6333 -p 6334:6334 \
+  -v "$PWD/qdrant_storage:/qdrant/storage" \
+  qdrant/qdrant                    # Qdrant on :6333 (not in docker-compose yet)
+```
+
+Then set up Postgres and load the fixtures (next section), and start the app:
+
+```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to see the app.
+Open [http://localhost:3000](http://localhost:3000) to see the app. Without Postgres the app still answers from Qdrant, but count questions fall back to a sample with a note.
 
-Check `lib/env.ts` for the environment variables the app expects.
+`.env.example` lists every variable; `lib/env.ts` and `lib/db/config.ts` validate them. Day-to-day commands are in [docs/dev-cheatsheet.md](docs/dev-cheatsheet.md).
+
+### Checks
+
+```bash
+npx next typegen && npx tsc --noEmit   # typegen writes the route types a fresh clone lacks
+npm run lint
+npm test                           # database tests run when DATABASE_URL_TEST is set, and are skipped otherwise
+```
+
+The same three run on every pull request (`.github/workflows/ci.yml`), with a disposable Postgres for the database tests. `npm run eval` calls OpenAI, so it is run by hand.
 
 ### Local Postgres (review counts)
 
@@ -62,9 +84,10 @@ Integration tests use the disposable instance and are skipped unless `DATABASE_U
 
 | Path | Purpose |
 |---|---|
-| `lib/schema.ts` | Zod schemas for Google Business Profile reviews and the stored review record |
+| `lib/schema.ts` | Zod schemas for Google Business Profile reviews, the query plan and the route |
 | `lib/sanitize.ts` | Lightweight regex sanitizer (emails, phones, booking refs, card-like numbers) |
 | `lib/qdrant.ts`, `lib/openai.ts`, `lib/env.ts` | Clients and config |
+| `lib/properties.ts` | The property names the planner may filter on (Postgres, with Qdrant as fallback) |
 | `scripts/ingest.ts` | Load → validate → sanitize → Postgres → embed → Qdrant → reconcile |
 | `db/migrations/`, `db/setup/roles.sql` | Plain-SQL schema and read-only role grants |
 | `lib/db/` | Migration runner, import, Qdrant sync, reconcile/reindex, tag writer |

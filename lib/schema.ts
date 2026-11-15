@@ -56,25 +56,6 @@ export const LocationReviewsSchema = z.object({
 });
 export type LocationReviews = z.infer<typeof LocationReviewsSchema>;
 
-/**
- * What we actually store in Qdrant: sanitized text plus filterable metadata.
- * Note there is no reviewer field: guest identity never enters the index.
- */
-export const ReviewRecordSchema = z.object({
-  reviewId: z.string(),
-  locationId: z.string(),
-  propertyName: z.string(),
-  propertyType: PropertyType,
-  rating: z.number().int().min(1).max(5),
-  // Month the review was written (1-12, UTC). Lets "winter" filter across years.
-  month: z.number().int().min(1).max(12),
-  text: z.string().min(1),
-  ownerReply: z.string().optional(),
-  createdAt: z.string(),
-  source: z.literal("google_business_profile"),
-});
-export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
-
 const RATING_TO_NUMBER: Record<string, number> = {
   ONE: 1,
   TWO: 2,

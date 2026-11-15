@@ -76,13 +76,49 @@ export type DateWindow = { since: string; until: string };
  */
 export type PeriodMentions = { [K in keyof (ThemeMentions & { window: DateWindow })]: (ThemeMentions & { window: DateWindow })[K] };
 
+/**
+ * How a theme moved between two periods. The periods rarely hold the same number of
+ * tagged reviews (tagging is partial and review volume is seasonal), so the comparison
+ * that means something is the SHARE of tagged reviews mentioning the theme, not the
+ * raw count: 20 of 200 against 10 of 50 is twice the mentions and half the share.
+ */
+export type TrendChange = {
+  /** Mentions now minus mentions before. */
+  absolute: number;
+  /** Relative change in the raw count. Only comparable when both periods have the same tagged total. */
+  percent: number | null;
+  /** Mentions divided by tagged reviews, 0..1. Null when the period has no tagged reviews. */
+  currentShare: number | null;
+  previousShare: number | null;
+  /** Share now minus share before, in percentage points. Null when either share is. */
+  sharePoints: number | null;
+};
+
 export type ThemeTrend = {
   theme: string;
   sentiment: Sentiment | null;
   current: PeriodMentions;
   previous: PeriodMentions;
-  change: { absolute: number; percent: number | null };
+  change: TrendChange;
 };
+
+/** Pure, so the arithmetic is tested without a database. */
+export function trendChange(
+  current: { count: number; tagged: number },
+  previous: { count: number; tagged: number },
+): TrendChange {
+  const share = (p: { count: number; tagged: number }) => (p.tagged > 0 ? p.count / p.tagged : null);
+  const absolute = current.count - previous.count;
+  const currentShare = share(current);
+  const previousShare = share(previous);
+  return {
+    absolute,
+    percent: previous.count === 0 ? null : (absolute / previous.count) * 100,
+    currentShare,
+    previousShare,
+    sharePoints: currentShare === null || previousShare === null ? null : (currentShare - previousShare) * 100,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Input handling
@@ -372,12 +408,14 @@ export async function themeTrend(
   });
   const current = await run(window);
   const previous = await run(prev);
-  const absolute = current.total.count - previous.total.count;
   return {
     theme: opts.theme,
     sentiment: opts.sentiment ?? null,
     current,
     previous,
-    change: { absolute, percent: previous.total.count === 0 ? null : (absolute / previous.total.count) * 100 },
+    change: trendChange(
+      { count: current.total.count, tagged: current.total.coverage.currentTagged },
+      { count: previous.total.count, tagged: previous.total.coverage.currentTagged },
+    ),
   };
 }

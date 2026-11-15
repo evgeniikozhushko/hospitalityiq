@@ -2,7 +2,7 @@
 
 Living reference for the HospitalityIQ build. Consolidates the Project Plan and Pilot proposal (both dated Nov 1, 2026) with decisions made since.
 
-Last updated: Nov 6, 2026 · Evgenii Kozhushko
+Last updated: Nov 14, 2026 · Evgenii Kozhushko
 
 ---
 
@@ -82,7 +82,7 @@ Google reviews are already public, so the local redaction pipeline adds little p
 
 ### What stays
 
-- **Reviewer identity is not stored.** The reviewer's name from Google is dropped at ingestion (`ReviewRecordSchema` has no reviewer field).
+- **Reviewer identity is not stored.** The reviewer's name from Google is dropped at ingestion (`lib/db/import.ts` never reads it; no table or index payload has a reviewer field).
 - **Financial data stays restricted.** Campaign spend and revenue live in Postgres behind role-based access, never in the vector store. The model only receives figures an answer needs, for users whose role allows it. This was marketing's original concern.
 - **Traceability:** every answer cites sources; every step is logged in LangSmith.
 

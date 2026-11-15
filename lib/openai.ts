@@ -2,9 +2,18 @@ import OpenAI from "openai";
 import { wrapOpenAI } from "langsmith/wrappers";
 import { env } from "./env";
 
+/**
+ * How long one request may take before it is abandoned and retried (the SDK default
+ * is 10 minutes). It bounds the wait for a response to start, which is what a stuck
+ * planner or embedding call looks like.
+ */
+export const OPENAI_TIMEOUT_MS = 60_000;
+
 const client = new OpenAI({
   apiKey: env.OPENAI_API_KEY,
   baseURL: env.OPENAI_BASE_URL,
+  timeout: OPENAI_TIMEOUT_MS,
+  maxRetries: 2,
 });
 
 // Opt-in tracing: with LANGSMITH_TRACING unset or false the client is untouched.

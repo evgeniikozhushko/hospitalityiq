@@ -18,7 +18,7 @@ import {
 import type { StatsQuery, ThemeInfo } from "./route";
 import type { QueryFilters } from "./schema";
 
-/** Below this many mentions in either period, a trend shows no change or percent. */
+/** Below this many mentions in either period, a trend shows no change. */
 export const MIN_TREND_MENTIONS = 10;
 
 export const PROVISIONAL_CAVEAT =
@@ -134,6 +134,9 @@ const followUp = (label: string) => `For what guests say, ask: "What do guests s
 
 const percent = (n: number) => `${Math.round(n)}%`;
 
+/** One decimal, so a move from 4.4% to 5.1% is not printed as "4% to 5%". */
+const oneDecimal = (n: number) => Math.round(n * 10) / 10;
+
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
@@ -219,6 +222,27 @@ function renderRanking(o: Extract<StatsOutcome, { kind: "ranking" }>, ctx: Rende
   return { blocks, followUp: r.themes.length > 0 ? followUp(labelOf(r.themes[0].theme, ctx.themes)) : null };
 }
 
+/**
+ * The change between two periods, led by the share of tagged reviews. The points are
+ * the difference of the two printed shares, so the sentence always adds up. The raw
+ * count follows, with a warning when the periods are not the same size.
+ */
+function changeSentences(r: ThemeTrend, currentShare: number, previousShare: number): string {
+  const now = oneDecimal(currentShare * 100);
+  const before = oneDecimal(previousShare * 100);
+  const points = oneDecimal(now - before);
+  const signed = (n: number) => `${n > 0 ? "+" : "-"}${Math.abs(n)}`;
+  const move = points === 0 ? "no change" : `${signed(points)} ${plural(Math.abs(points), "point", "points")}`;
+  const share = `Change: ${now}% of tagged reviews now, ${before}% before (${move}).`;
+
+  const abs = r.change.absolute;
+  const counts = abs === 0 ? "Mentions: no change." : `Mentions: ${signed(abs)}.`;
+  const sameSize = r.current.total.coverage.currentTagged === r.previous.total.coverage.currentTagged;
+  return sameSize
+    ? `${share} ${counts}`
+    : `${share} ${counts} The two periods have different numbers of tagged reviews, so compare the shares, not the counts.`;
+}
+
 function renderTrend(o: Extract<StatsOutcome, { kind: "trend" }>, ctx: RenderContext): Rendered {
   const r = o.result;
   const label = labelOf(r.theme, ctx.themes);
@@ -237,16 +261,11 @@ function renderTrend(o: Extract<StatsOutcome, { kind: "trend" }>, ctx: RenderCon
   ];
 
   const enough = r.current.total.count >= MIN_TREND_MENTIONS && r.previous.total.count >= MIN_TREND_MENTIONS;
-  if (!enough || r.change.percent === null) {
+  const { currentShare, previousShare } = r.change;
+  if (!enough || currentShare === null || previousShare === null) {
     blocks.push("Too few mentions to show a reliable change.");
-  } else if (r.change.absolute === 0) {
-    blocks.push("Change: no change (0%).");
   } else {
-    const sign = r.change.absolute > 0 ? "+" : "-";
-    const abs = Math.abs(r.change.absolute);
-    blocks.push(
-      `Change: ${sign}${abs} ${plural(abs, "mention", "mentions")} (${sign}${percent(Math.abs(r.change.percent))}).`,
-    );
+    blocks.push(changeSentences(r, currentShare, previousShare));
   }
   // Nothing to follow up when neither period has a single tagged review.
   const counted = r.current.total.coverage.currentTagged > 0 || r.previous.total.coverage.currentTagged > 0;

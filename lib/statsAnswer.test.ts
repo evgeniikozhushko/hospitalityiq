@@ -4,6 +4,7 @@ import type { ThemeInfo } from "./route";
 import {
   ComparisonError,
   StatsInputError,
+  trendChange,
   UnknownPropertyError,
   UnknownThemeError,
   type Coverage,
@@ -260,26 +261,30 @@ describe("renderStats: trend", () => {
   const trend = (
     current: number,
     previous: number,
-    percent: number | null = null,
     coverage: { current?: Partial<Coverage>; previous?: Partial<Coverage> } = {},
   ) => {
+    const cur = period("2025-11-11", "2026-11-10", current, {
+      totalReviews: 40,
+      textReviews: 40,
+      currentTagged: 40,
+      ...coverage.current,
+    });
+    const prev = period("2024-11-11", "2025-11-10", previous, {
+      totalReviews: 30,
+      textReviews: 30,
+      currentTagged: 25,
+      untagged: 5,
+      ...coverage.previous,
+    });
     const t: ThemeTrend = {
       theme: "front-desk",
       sentiment: null,
-      current: period("2025-11-11", "2026-11-10", current, {
-        totalReviews: 40,
-        textReviews: 40,
-        currentTagged: 40,
-        ...coverage.current,
-      }),
-      previous: period("2024-11-11", "2025-11-10", previous, {
-        totalReviews: 30,
-        textReviews: 30,
-        currentTagged: 25,
-        untagged: 5,
-        ...coverage.previous,
-      }),
-      change: { absolute: current - previous, percent },
+      current: cur,
+      previous: prev,
+      change: trendChange(
+        { count: current, tagged: cur.total.coverage.currentTagged },
+        { count: previous, tagged: prev.total.coverage.currentTagged },
+      ),
     };
     return renderStats(
       {
@@ -310,21 +315,57 @@ describe("renderStats: trend", () => {
   it("refuses to show a change when either period has too few mentions", () => {
     expect(MIN_TREND_MENTIONS).toBe(10);
     for (const [cur, prev] of [[2, 0], [12, 9], [9, 12]]) {
-      const text = trend(cur, prev, 50);
+      const text = trend(cur, prev);
       expect(text).toContain("Too few mentions to show a reliable change.");
       expect(text).not.toMatch(/%/);
     }
   });
 
-  it("shows the change and percent when both periods have enough mentions", () => {
-    expect(trend(15, 10, 50)).toContain("Change: +5 mentions (+50%).");
-    expect(trend(10, 15, -33.33)).toContain("Change: -5 mentions (-33%).");
-    expect(trend(10, 10, 0)).toContain("Change: no change (0%).");
+  const same = { currentTagged: 40, totalReviews: 40, textReviews: 40, untagged: 0 };
+
+  it("compares the share of tagged reviews, then the raw count", () => {
+    expect(trend(15, 10, { previous: same })).toContain(
+      "Change: 37.5% of tagged reviews now, 25% before (+12.5 points). Mentions: +5.",
+    );
+    expect(trend(10, 15, { previous: same })).toContain(
+      "Change: 25% of tagged reviews now, 37.5% before (-12.5 points). Mentions: -5.",
+    );
+    expect(trend(10, 10, { previous: same })).toContain(
+      "Change: 25% of tagged reviews now, 25% before (no change). Mentions: no change.",
+    );
+    expect(trend(11, 10, { current: { currentTagged: 110, totalReviews: 110, textReviews: 110 }, previous: { currentTagged: 110, totalReviews: 110, textReviews: 110, untagged: 0 } })).toContain(
+      "(+0.9 points). Mentions: +1.",
+    );
+  });
+
+  it("more mentions but a falling share reads as a fall, with a warning about the counts", () => {
+    // 20 of 200 tagged now, 10 of 50 tagged before: twice the mentions, half the share.
+    const text = trend(20, 10, {
+      current: { totalReviews: 200, textReviews: 200, currentTagged: 200 },
+      previous: { totalReviews: 50, textReviews: 50, currentTagged: 50, untagged: 0 },
+    });
+    expect(text).toContain(
+      "Change: 10% of tagged reviews now, 20% before (-10 points). Mentions: +10. The two periods have different numbers of tagged reviews, so compare the shares, not the counts.",
+    );
+    expect(text).not.toContain("+100%");
+  });
+
+  it("the same count over different tagged totals is still a change in share", () => {
+    expect(trend(10, 10)).toContain("Change: 25% of tagged reviews now, 40% before (-15 points). Mentions: no change. The two periods");
+  });
+
+  it("prints points that match the printed shares", () => {
+    // 10/96 = 10.4166…% and 19/97 = 19.5876…%: shares print as 10.4 and 19.6, so points must be -9.2.
+    const text = trend(10, 19, {
+      current: { totalReviews: 96, textReviews: 96, currentTagged: 96 },
+      previous: { totalReviews: 97, textReviews: 97, currentTagged: 97, untagged: 0 },
+    });
+    expect(text).toContain("Change: 10.4% of tagged reviews now, 19.6% before (-9.2 points).");
   });
 
   it("leaves out the follow-up when neither period has tagged reviews", () => {
     const untagged = { currentTagged: 0, untagged: 40 };
-    const text = trend(0, 0, null, { current: untagged, previous: { ...untagged, totalReviews: 30, textReviews: 30, untagged: 30 } });
+    const text = trend(0, 0, { current: untagged, previous: { ...untagged, totalReviews: 30, textReviews: 30, untagged: 30 } });
     expect(text).toContain("None of the 40 reviews in scope are tagged yet");
     expect(text).toContain("None of the 30 reviews in scope are tagged yet");
     expect(text).not.toMatch(/ask:/);
@@ -332,8 +373,8 @@ describe("renderStats: trend", () => {
 
   it("keeps the follow-up when either period has tagged reviews, even with zero mentions", () => {
     const none = { currentTagged: 0, untagged: 40 };
-    expect(trend(0, 0, null, { current: none })).toMatch(/ask: "What do guests say about front desk\?"$/);
-    expect(trend(0, 0, null, { previous: { currentTagged: 0, untagged: 30 } })).toMatch(/ask:/);
+    expect(trend(0, 0, { current: none })).toMatch(/ask: "What do guests say about front desk\?"$/);
+    expect(trend(0, 0, { previous: { currentTagged: 0, untagged: 30 } })).toMatch(/ask:/);
   });
 });
 
