@@ -3,8 +3,9 @@
  * Exact counts against real SQL are in answerPipeline.db.test.ts.
  */
 import { describe, expect, it, vi } from "vitest";
-import { answerWith, type AnswerDeps, type AnswerEvent, type StatsDb } from "./answerPipeline";
-import { FALLBACK_SUFFIX } from "./route";
+import { AGGREGATE_RULES, answerWith, SAMPLE_RULES, type AnswerDeps, type AnswerEvent, type StatsDb } from "./answerPipeline";
+import { FALLBACK_SUFFIX, PROPERTY_NEEDS_THEME_REASON } from "./route";
+import { sampleCaveat } from "./sampleClaims";
 import { DECLINE_MESSAGES, EMPTY_FILTERS, type PlannerOutput, type Source } from "./schema";
 import { STATS_UNAVAILABLE_NOTE } from "./statsAnswer";
 
@@ -135,5 +136,82 @@ describe("answerWith: gate fallbacks use the themes from the database", () => {
     );
     expect(vi.mocked(d.retrieve).mock.calls[0][0].mode).toBe("aggregate");
     expect(d.logError).not.toHaveBeenCalled();
+  });
+});
+
+describe("answerWith: search results are never worded as a count", () => {
+  const themesDb = {
+    query: vi.fn(async () => ({ rows: [{ slug: "parking", label: "Parking" }, { slug: "other", label: "Other" }] })),
+  } as unknown as StatsDb;
+  const retrievalPlan = statsPlan({ route: "retrieval", stat: null });
+  const answering = (text: string) =>
+    vi.fn(async function* () {
+      // Split mid-phrase, as a real stream would.
+      yield text.slice(0, 9);
+      yield text.slice(9);
+    });
+
+  it("tells the model how many reviews it has, in both modes, without saying more exist", async () => {
+    for (const mode of ["specific", "aggregate"] as const) {
+      const d = deps({ ...retrievalPlan, mode });
+      await run(d);
+      const { instructions, input } = vi.mocked(d.streamAnswer).mock.calls[0][0];
+      expect(instructions).toContain(SAMPLE_RULES);
+      expect(instructions.includes(AGGREGATE_RULES)).toBe(mode === "aggregate");
+      expect(input).toContain("Reviews (the 1 review shown; a search found it closest to the question):");
+    }
+  });
+
+  it("carries no fallback code on a plain retrieval answer", async () => {
+    const { events } = await run(deps(retrievalPlan));
+    expect(events[1]).toMatchObject({ type: "sources", fallback: null });
+  });
+
+  it("carries the gate's fallback code to the sources event and refuses to rank properties", async () => {
+    const d = deps(statsPlan({ stat: { kind: "mentions", themes: [], topic: "complaints", sentiment: "negative", ranks: "properties" } }), {
+      statsDb: vi.fn(() => themesDb),
+    });
+    const { events, text } = await run(d);
+    expect(events[1]).toMatchObject({ type: "sources", fallback: "property_needs_theme" });
+    expect(text.startsWith(PROPERTY_NEEDS_THEME_REASON)).toBe(true);
+    expect(vi.mocked(d.streamAnswer).mock.calls[0][0].input).toContain("Do not rank the properties");
+  });
+
+  it("does not add the ranking refusal for other fallbacks", async () => {
+    const d = deps(statsPlan({ stat: { kind: "mentions", themes: [], topic: "breakfast", sentiment: null, ranks: null } }), {
+      statsDb: vi.fn(() => themesDb),
+    });
+    const { events } = await run(d);
+    expect(events[1]).toMatchObject({ type: "sources", fallback: "not_a_theme" });
+    expect(vi.mocked(d.streamAnswer).mock.calls[0][0].input).not.toContain("Do not rank the properties");
+  });
+
+  it("appends the disclosure after an answer that words the results as a count", async () => {
+    const slip = "Guests say parking was easy [1].\n\n- The only review that mentions parking says it was easy [1].";
+    const d = deps(retrievalPlan, { streamAnswer: answering(slip) });
+    const { text, types } = await run(d);
+    expect(text).toBe(`${slip}\n\n${sampleCaveat(1)}`);
+    expect(types.at(-1)).toBe("done");
+    expect(d.logError).toHaveBeenCalledOnce();
+  });
+
+  it("appends nothing to a clean answer", async () => {
+    const clean = "One review says parking was easy [1].";
+    const d = deps(retrievalPlan, { streamAnswer: answering(clean) });
+    const { text } = await run(d);
+    expect(text).toBe(clean);
+    expect(d.logError).not.toHaveBeenCalled();
+  });
+
+  it("discloses a property ranking only on the rank-properties fallback", async () => {
+    const ranked = "The Lodge appears to get the most complaints [1].";
+    const onFallback = deps(statsPlan({ stat: { kind: "mentions", themes: [], topic: "complaints", sentiment: "negative", ranks: "properties" } }), {
+      statsDb: vi.fn(() => themesDb),
+      streamAnswer: answering(ranked),
+    });
+    expect((await run(onFallback)).text.endsWith(sampleCaveat(1))).toBe(true);
+
+    const elsewhere = deps(retrievalPlan, { streamAnswer: answering(ranked) });
+    expect((await run(elsewhere)).text).toBe(ranked);
   });
 });

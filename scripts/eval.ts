@@ -4,8 +4,9 @@
  * Usage: npm run eval -- [--runs 3] [--only q01,q05] [--judge] [--baseline name] [--no-fail]
  *   --runs N         repeat each question N times (planner and answerer are non-deterministic)
  *   --only ids       run a subset
- *   --judge          also grade groundedness and sample figures stated as counts with an LLM
- *                    (acknowledgement checks always use it)
+ *   --judge          also grade groundedness with an LLM, and add its opinion on sample figures
+ *                    stated as counts beside the deterministic check (acknowledgement checks
+ *                    always use it)
  *   --baseline name  also save the results as evals/baselines/<name>.json (never overwrites)
  *   --no-fail        always exit 0
  *
@@ -16,7 +17,9 @@
  *   boundary    path only: questions that must stay on retrieval or fall back honestly
  *
  * Two kinds of check, scored differently (lib/evalMetrics.ts, JUDGE_CHECKS):
- *   deterministic  path, exact text, filters, sources, citations, quotes, names. The same
+ *   deterministic  path, exact text, filters, sources, citations, quotes, names, and the known
+ *                  wordings that state search results as a count or a property ranking
+ *                  (lib/sampleClaims.ts: known patterns, not semantic detection). The same
  *                  answer always gets the same verdict, so a case passes only when these
  *                  pass in EVERY run, and only these decide the exit code and what counts
  *                  as a regression.
@@ -30,7 +33,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { answerQuestion } from "../lib/answer";
-import { AGGREGATE_RULES, ANSWER_INSTRUCTIONS } from "../lib/answerPipeline";
+import { answerPromptText } from "../lib/answerPipeline";
 import { env } from "../lib/env";
 import { judgeAcknowledges, judgeGrounded, judgeNoSampleCounts, type JudgeResult } from "../lib/evalJudge";
 import {
@@ -46,6 +49,7 @@ import {
   leakedNames,
   mean,
   missingText,
+  neutralizeInjected,
   outcomeOf,
   pathOf,
   quotedInPrompts,
@@ -59,6 +63,7 @@ import {
   type RunTrace,
 } from "../lib/evalMetrics";
 import { plannerPrompt, routePrompt } from "../lib/plan";
+import { rankingClaims, sampleCountClaims, splitCaveat } from "../lib/sampleClaims";
 import type { PlannerOutput, QueryFilters } from "../lib/schema";
 
 /** The run the regression group is compared with (committed, never overwritten). */
@@ -103,6 +108,10 @@ type RunResult = {
   deterministicPass: boolean;
   /** Judge: does a sample-based answer state a figure as a count? Reported, not part of pass. */
   sampleCount: JudgeResult | null;
+  /** Why a count question was answered from search results instead; null otherwise. */
+  fallbackCode: string | null;
+  /** The pipeline's own runtime check fired and appended its disclosure to the answer. */
+  caveatShown: boolean;
   answer: string;
   seconds: number;
 };
@@ -153,6 +162,7 @@ async function collect(question: string): Promise<RunTrace> {
     answer: "",
     planRoute: null,
     statsKind: null,
+    fallbackCode: null,
   };
   for await (const e of answerQuestion(question, { today: dataset.today })) {
     if (e.type === "plan") {
@@ -168,6 +178,7 @@ async function collect(question: string): Promise<RunTrace> {
     else if (e.type === "sources") {
       t.sources = e.sources;
       t.relaxed = e.relaxed;
+      t.fallbackCode = e.fallback;
     } else if (e.type === "delta") t.answer += e.text;
   }
   return t;
@@ -190,7 +201,9 @@ async function runCase(c: Case): Promise<RunResult> {
   const outcome = outcomeOf(t);
   const path = pathOf(t);
   // Checks on model output never grade the code-written fallback note or count text.
-  const { modelText } = splitNote(t.answer);
+  // Nor the disclosure the pipeline appends when its runtime check fires: the model's own
+  // wording is what is graded, so a slip fails here even though the user saw the disclosure.
+  const { text: modelText, caveat } = splitCaveat(splitNote(t.answer).modelText);
   const modelAnswered = path === "retrieval" || path === "fallback";
   add("outcome", outcome === c.expectedOutcome, `got ${outcome}, want ${c.expectedOutcome}`);
   if (c.expectedPath) add("path", path === c.expectedPath, `got ${path}, want ${c.expectedPath}`);
@@ -219,6 +232,12 @@ async function runCase(c: Case): Promise<RunResult> {
     add("citations", cit.invalid.length === 0 && !cit.missing, cit.missing ? "cites nothing" : `invalid: ${cit.invalid}`);
     const q = unmatchedQuotes(modelText, t.sources.map((s) => s.text), c.question);
     add("quotes verbatim", q.length === 0, q.join(" | "));
+    const counts = sampleCountClaims(modelText);
+    add("no sample counts", counts.length === 0, counts.map((x) => `${x.kind}: ${x.sentence}`).join(" | "));
+    if (t.fallbackCode === "property_needs_theme") {
+      const ranked = rankingClaims(modelText);
+      add("no property ranking", ranked.length === 0, ranked.join(" | "));
+    }
     if (flag("judge") && t.sources.length) sampleCount = await judgeNoSampleCounts(modelText);
   }
   if (outcome === "answered") {
@@ -229,7 +248,9 @@ async function runCase(c: Case): Promise<RunResult> {
     if (flag("judge") && modelAnswered && t.sources.length) {
       // Same facts the answer model saw: property, rating and date are legitimate to cite.
       const reviews = t.sources
-        .map((s) => `[${s.n}] ${s.propertyName} · ${s.rating}★ · ${s.createdAt.slice(0, 10)}\n${s.text}`)
+        // The judge's copy only: an instruction planted in a review must not make the judge
+        // discard that review's real sentences. The answer model received the raw text.
+        .map((s) => `[${s.n}] ${s.propertyName} · ${s.rating}★ · ${s.createdAt.slice(0, 10)}\n${neutralizeInjected(s.text)}`)
         .join("\n\n");
       const j = await judgeGrounded(modelText, reviews);
       add("grounded", j.pass, j.reason);
@@ -253,6 +274,8 @@ async function runCase(c: Case): Promise<RunResult> {
     pass: checks.every((x) => x.pass === true),
     deterministicPass: deterministicPass(checks),
     sampleCount,
+    fallbackCode: t.fallbackCode,
+    caveatShown: caveat !== null,
     answer: t.answer,
     seconds: (Date.now() - started) / 1000,
   };
@@ -280,7 +303,7 @@ async function main() {
         results[c.id].push({
           caseId: c.id, outcome: "answered", path: null, mode: null, retrievedIds: [], recall: NaN, rr: NaN,
           sourcesOk: null, checks: [{ name: "pipeline", pass: false, detail: (err as Error).message }],
-          pass: false, deterministicPass: false, sampleCount: null, answer: "", seconds: 0,
+          pass: false, deterministicPass: false, sampleCount: null, fallbackCode: null, caveatShown: false, answer: "", seconds: 0,
         });
       }
     }
@@ -347,7 +370,7 @@ async function main() {
   }
 
   // --- Routing, split by whether a prompt quotes the question -----------------
-  const promptText = [plannerPrompt([], dataset.today), routePrompt(), ANSWER_INSTRUCTIONS, AGGREGATE_RULES].join("\n");
+  const promptText = [plannerPrompt([], dataset.today), routePrompt(), answerPromptText()].join("\n");
   const quoted = new Set(cases.filter((c) => quotedInPrompts(c.question, promptText)).map((c) => c.id));
   const routed = cases.filter((c) => c.expectedPath);
   const pathRate = (ids: string[]) => {
@@ -406,11 +429,21 @@ async function main() {
   console.log(`\n3. Boundary and fallback (${boundaryIds.length} cases): ${casesPassing(boundaryIds)}/${boundaryIds.length} passing`);
   console.log(`  path: ${boundaryPath.passed}/${boundaryPath.total} runs (target: all)`);
 
+  // --- Search results worded as counts: the deterministic check, then the judge's opinion ---
+  const countChecks = all.flatMap((x) => x.checks.filter((c) => c.name === "no sample counts").map((c) => ({ run: x, c })));
+  const countFails = countChecks.filter((x) => x.c.pass !== true);
+  const rankChecks = all.flatMap((x) => x.checks.filter((c) => c.name === "no property ranking"));
+  const caveats = all.filter((x) => x.caveatShown).length;
+  console.log(`\nSample figures stated as counts, known wordings (deterministic): ${countFails.length}/${countChecks.length} runs (target 0)`);
+  for (const x of countFails) console.log(`  ${x.run.caseId}: ${x.c.detail}`);
+  console.log(`  property ranking from search results: ${rankChecks.filter((c) => c.pass !== true).length}/${rankChecks.length} runs (target 0)`);
+  console.log(`  runtime disclosure appended by the pipeline: ${caveats} runs`);
+
   const judged = all.filter((x) => x.sampleCount !== null);
   const sampleFails = judged.filter((x) => x.sampleCount?.pass === false);
   const sampleUnknown = judged.filter((x) => x.sampleCount?.pass === null);
   if (flag("judge")) {
-    console.log(`\nSample figures stated as counts (sample-based answers): ${sampleFails.length}/${judged.length} runs (target 0)`);
+    console.log(`\nSample figures stated as counts, judge's opinion (noisy; a rate, not a gate): ${sampleFails.length}/${judged.length} runs`);
     for (const x of sampleFails) console.log(`  ${x.caseId}: ${x.sampleCount?.reason}`);
     if (sampleUnknown.length) console.log(`  judge unavailable on ${sampleUnknown.length} runs`);
   }
@@ -441,6 +474,9 @@ async function main() {
         statistics: { cases: statsIds.length, passing: casesPassing(statsIds), path: statsPath, exactText: exact },
         boundary: { cases: boundaryIds.length, passing: casesPassing(boundaryIds), path: boundaryPath },
         sampleCounts: flag("judge") ? { failed: sampleFails.length, judged: judged.length } : null,
+        sampleCountWording: { failed: countFails.length, checked: countChecks.length },
+        propertyRanking: { failed: rankChecks.filter((c) => c.pass !== true).length, checked: rankChecks.length },
+        runtimeDisclosures: caveats,
       },
     },
     results,

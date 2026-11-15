@@ -15,7 +15,8 @@ import { buildNotes } from "./answerNotes";
 import type { TagSource } from "./db/tags";
 import { sanitizePlan } from "./filters";
 import { themeMentions, themeRanking, themeTrend, type StatsScope } from "./reviewStats";
-import { resolveRoute, type StatsQuery, type ThemeInfo } from "./route";
+import { resolveRoute, type FallbackCode, type StatsQuery, type ThemeInfo } from "./route";
+import { rankingClaims, sampleCaveat, sampleCountClaims } from "./sampleClaims";
 import {
   DECLINE_MESSAGES,
   NO_DATA_MESSAGE,
@@ -30,7 +31,8 @@ export type AnswerEvent =
   | { type: "plan"; plan: QueryPlan; droppedPropertyNames: string[] }
   | { type: "declined"; intent: Exclude<QueryIntent, "review_insight">; message: string }
   | { type: "no_data"; message: string }
-  | { type: "sources"; sources: Source[]; relaxed: boolean }
+  /** fallback: why a count question is being answered from search results instead; null otherwise. */
+  | { type: "sources"; sources: Source[]; relaxed: boolean; fallback: FallbackCode | null }
   /** The exact result behind a statistics answer; the text itself arrives as delta events. */
   | { type: "stats"; outcome: StatsOutcome }
   | { type: "delta"; text: string }
@@ -86,6 +88,35 @@ This is a comparison/aggregate question. You see a sample of the most relevant r
 - Group findings by property.
 - Never claim exact totals or rankings as fact; describe what the sample suggests.`;
 
+/**
+ * Both modes: what the reviews are, and what cannot be said from them. Counts never pass
+ * through the model (docs/adr/0001), so it must not word a handful of search results as
+ * a count. lib/sampleClaims.ts checks the answer for the same wordings.
+ */
+export const SAMPLE_RULES = `
+
+What you are given (search results, not every review):
+- The reviews below are the ones a search found closest to the question. They may or may not be every review on the topic, so they cannot show how many reviews mention something, or that nothing else does.
+- Report what the reviews you cite say. Leave the reviews you do not use out of the answer: do not mention, count or cite them, and do not say what they lack.
+- Do not write "the only review", "the only complaint", "only one review", "only two reviews", "no other review" or "the other reviews do not mention it". Write what a review says instead: "A review says the shuttle ran late [2]."
+- When you need to describe the reviews as a group (for example because none of them covers the question, or they are too few to show a pattern), call them "the N reviews shown", using the number given above the reviews: "None of the 6 reviews shown mentions the shuttle."`;
+
+/** The context heading states how many reviews follow, so the model never counts them itself. */
+export function reviewsHeading(count: number): string {
+  return `Reviews (the ${count} ${count === 1 ? "review" : "reviews"} shown; a search found ${count === 1 ? "it" : "them"} closest to the question):`;
+}
+
+/** Every answer-side prompt text, for the eval's check on questions quoted in prompts. */
+export function answerPromptText(): string {
+  return [
+    ANSWER_INSTRUCTIONS,
+    SAMPLE_RULES,
+    AGGREGATE_RULES,
+    reviewsHeading(8),
+    buildNotes({ relaxed: true, dropped: ["a property"], portfolioAlias: "the company", ranksProperties: true }),
+  ].join("\n");
+}
+
 function buildContext(sources: Source[], mode: QueryPlan["mode"]): string {
   const line = (s: Source) =>
     `[${s.n}] ${s.propertyName} (${s.propertyType}) · ${s.rating}★ · ${s.createdAt.slice(0, 10)}\n${s.text}`;
@@ -125,7 +156,7 @@ async function runStats(db: StatsDb, query: StatsQuery, s: StatsSettings): Promi
 
 type StatsAttempt =
   | { kind: "answered"; events: AnswerEvent[] }
-  | { kind: "fallback"; note: string | null };
+  | { kind: "fallback"; note: string | null; code: FallbackCode | null };
 
 /**
  * Try the statistics route. Returns the events to emit, or the note to show above
@@ -135,12 +166,14 @@ async function tryStatistics(raw: PlannerOutput, deps: AnswerDeps): Promise<Stat
   const db = deps.statsDb();
   if (!db) {
     deps.logError("statistics unavailable: DATABASE_URL_READONLY is not set", null);
-    return { kind: "fallback", note: STATS_UNAVAILABLE_NOTE };
+    return { kind: "fallback", note: STATS_UNAVAILABLE_NOTE, code: null };
   }
   try {
     const themes = await loadThemes(db);
     const decision = resolveRoute(raw, themes, deps.today);
-    if (decision.route === "retrieval") return { kind: "fallback", note: decision.fallback?.note ?? null };
+    if (decision.route === "retrieval") {
+      return { kind: "fallback", note: decision.fallback?.note ?? null, code: decision.fallback?.code ?? null };
+    }
 
     const outcome = await runStats(db, decision.query, deps.stats);
     const text = renderStats(outcome, { themes, provisional: deps.stats.provisional });
@@ -149,7 +182,7 @@ async function tryStatistics(raw: PlannerOutput, deps: AnswerDeps): Promise<Stat
     const failure = statsFailure(err);
     if (failure.kind === "input") return { kind: "answered", events: [{ type: "delta", text: failure.message }] };
     deps.logError("statistics query failed", err);
-    return { kind: "fallback", note: failure.note };
+    return { kind: "fallback", note: failure.note, code: null };
   }
 }
 
@@ -170,6 +203,7 @@ export async function* answerWith(question: string, deps: AnswerDeps): AsyncGene
 
   let plan: QueryPlan = sanitized;
   let note: string | null = null;
+  let fallback: FallbackCode | null = null;
   if (raw.route === "statistics") {
     const attempt = await tryStatistics(raw, deps);
     if (attempt.kind === "answered") {
@@ -178,6 +212,7 @@ export async function* answerWith(question: string, deps: AnswerDeps): AsyncGene
       return;
     }
     note = attempt.note;
+    fallback = attempt.code;
     // A question that wanted a count spans many reviews: use the larger sample.
     plan = { ...sanitized, mode: "aggregate" };
   }
@@ -188,13 +223,28 @@ export async function* answerWith(question: string, deps: AnswerDeps): AsyncGene
     yield { type: "done" };
     return;
   }
-  yield { type: "sources", sources, relaxed };
+  yield { type: "sources", sources, relaxed, fallback };
   if (note) yield { type: "delta", text: `${note}\n\n` };
 
+  // A question that ranks properties but names no theme cannot be answered from search results.
+  const ranksProperties = fallback === "property_needs_theme";
   const stream = deps.streamAnswer({
-    instructions: ANSWER_INSTRUCTIONS + (plan.mode === "aggregate" ? AGGREGATE_RULES : ""),
-    input: `Question: ${question}${buildNotes({ relaxed, dropped: droppedPropertyNames, portfolioAlias })}\n\nReviews:\n\n${buildContext(sources, plan.mode)}`,
+    instructions: ANSWER_INSTRUCTIONS + SAMPLE_RULES + (plan.mode === "aggregate" ? AGGREGATE_RULES : ""),
+    input: `Question: ${question}${buildNotes({ relaxed, dropped: droppedPropertyNames, portfolioAlias, ranksProperties })}\n\n${reviewsHeading(sources.length)}\n\n${buildContext(sources, plan.mode)}`,
   });
-  for await (const text of stream) yield { type: "delta", text };
+  let written = "";
+  for await (const text of stream) {
+    written += text;
+    yield { type: "delta", text };
+  }
+  // The text is already on screen, so this discloses the limit rather than correcting the claim.
+  const counts = sampleCountClaims(written);
+  const rankings = ranksProperties ? rankingClaims(written) : [];
+  if (counts.length > 0 || rankings.length > 0) {
+    deps.logError("answer words search results as a count or ranking", {
+      claims: [...counts.map((c) => c.sentence), ...rankings],
+    });
+    yield { type: "delta", text: `\n\n${sampleCaveat(sources.length)}` };
+  }
   yield { type: "done" };
 }

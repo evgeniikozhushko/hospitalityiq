@@ -40,4 +40,21 @@ describe("buildNotes", () => {
       out.indexOf("Searching all properties"),
     );
   });
+
+  it("refuses to rank properties when the question names no theme", () => {
+    const out = buildNotes({ relaxed: false, dropped: [], portfolioAlias: null, ranksProperties: true });
+    expect(out).toContain("Do not rank the properties");
+    expect(out).toContain("first sentence must say that these reviews cannot show which property has the most");
+  });
+
+  it("puts the ranking refusal last, in the second sentence when another note leads", () => {
+    const out = buildNotes({ relaxed: false, dropped: [], portfolioAlias: "BCP", ranksProperties: true });
+    expect(out.indexOf("Searching all properties")).toBeLessThan(out.indexOf("Do not rank the properties"));
+    expect(out).toContain("second sentence must say that these reviews cannot show");
+    expect(out.match(/first sentence/g)).toHaveLength(1);
+  });
+
+  it("says nothing about ranking unless asked to", () => {
+    expect(buildNotes({ relaxed: true, dropped: ["X"], portfolioAlias: "BCP" })).not.toContain("rank");
+  });
 });
