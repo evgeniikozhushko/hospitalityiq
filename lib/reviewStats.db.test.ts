@@ -218,13 +218,26 @@ describe.skipIf(!url)("review statistics (database)", () => {
         { theme: "front-desk", count: 1 },
         { theme: "housekeeping", count: 1 },
         { theme: "rooms", count: 1 },
+        // Sixth and seventh, but tied with fifth place: a tie is never cut.
+        { theme: "spa", count: 1 },
+        { theme: "value", count: 1 },
       ]);
     });
 
     it("respects the limit and the property filter", async () => {
-      const r = await themeRanking(ro, scope({ propertyNames: [LODGE] }), { sentiment: "negative", limit: 2 });
-      expect(r.themes).toEqual([{ theme: "parking", count: 5 }, { theme: "front-desk", count: 1 }]);
+      const r = await themeRanking(ro, scope({ propertyNames: [LODGE] }), { sentiment: "negative", limit: 1 });
+      expect(r.themes).toEqual([{ theme: "parking", count: 5 }]);
       expect(r.coverage.totalReviews).toBe(11);
+    });
+
+    it("keeps every theme tied with the last place instead of cutting the tie alphabetically", async () => {
+      const r = await themeRanking(ro, scope({ propertyNames: [LODGE] }), { sentiment: "negative", limit: 2 });
+      expect(r.themes).toEqual([
+        { theme: "parking", count: 5 },
+        { theme: "front-desk", count: 1 },
+        { theme: "housekeeping", count: 1 },
+        { theme: "rooms", count: 1 },
+      ]);
     });
   });
 
