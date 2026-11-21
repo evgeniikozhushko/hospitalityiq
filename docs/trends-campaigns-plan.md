@@ -57,10 +57,13 @@ These depend on no data, so they come first. A single sign-in gate is enough for
 - **Three separate labelled sets:** the agreement set (20–30), a tuning set for prompt iteration (20–30), and the gate sample (100), which is never used for tuning.
 - The gate sample leans toward low star ratings, because complaints are what the main flow counts.
 - Every new prompt, model snapshot or taxonomy is a new tag set and goes through the gate again ([ADR 0003](adr/0003-a-tag-set-must-pass-the-gate-before-its-counts-are-shown.md)). The 100 labels stay the same, so re-checking is one run.
+- **Stale hand labels are left out of the gold labels.** A gate-sample review whose text was edited after it was hand-labelled is skipped, and the gate report says how many were skipped. It is re-labelled before it counts again.
+- **A passed set's gate-sample tags are locked.** The gate report stores the gate sample's review ids. Once a set has passed, the database refuses any change to those reviews' tags in that set, so the pass always describes the tags that are there. A gate-sample review whose text is later edited loses its model tags as usual (the review drops out of counts), and the set has to be gated again before that review's new tags count towards the pass.
 
 ### 4. Code picks the quotes (Q9)
 
-- The tagger returns the **evidence sentence** for each tag. Code checks it is a word-for-word substring of the stored (sanitized) text, because that is what gets quoted. A tag whose sentence fails the check is flagged under rule 2.
+- The tagger returns the **evidence sentence** for each tag. Code checks it is a word-for-word substring of the stored (sanitized) text, because that is what gets quoted. The database checks the substring too (migration 0003). A tag whose sentence fails the check is flagged under rule 2.
+- **Sentence boundaries.** A substring check alone accepts a fragment such as "parking". The tagger step also checks that the quote is a whole sentence: it starts at the beginning of the text or after sentence-ending punctuation, and ends at sentence-ending punctuation or the end of the text. A quote that fails is flagged, not trimmed or widened by code.
 - This needs a new nullable column on the tag rows. Hand tags have no sentence.
 - "Most relevant" is a rule code can apply: matching sentiment first (negative for a complaints question), then most recent.
 - The sentence also speeds up the hand audit for the gate.
@@ -122,9 +125,9 @@ Unit and database tests on 2–3 made-up campaign records that exist only in the
 ## Order
 
 1. Narrowed grants. Alongside it, pull real reviews for 2–3 properties.
-2. Tag set schema: active-set record, model snapshot and prompt version, evidence sentence column, validation flag.
-3. Tagger step with spending cap and substring check. Prompt written once on the synthetic set.
-4. Gate script and labelling format.
+2. Tag set schema: active-set record, model snapshot and prompt version, evidence sentence column, validation flag. Built in migrations 0003 and 0004.
+3. Tagger step with spending cap, substring check and sentence-boundary check. Prompt written once on the synthetic set.
+4. Gate script and labelling format. Stale hand labels left out of the gold labels; a passed set's gate-sample tags locked in the database.
 5. Quote selection and thin-theme rows.
 6. Campaign schema, financial role, template and ingest masking.
 7. Campaign routes: allowlist, rankings, compound question.
