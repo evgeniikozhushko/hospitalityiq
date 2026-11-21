@@ -56,7 +56,7 @@ describe.skipIf(!url)("answer pipeline, statistics route (database)", () => {
         yield "MODEL ANSWER";
       }),
       statsDb: () => ro,
-      stats: { tagSource: "manual", taxonomyVersion: "v1", source: "synthetic", provisional: false },
+      stats: { source: "synthetic", isProvisional: () => false },
       today: "2026-11-10",
       logError: vi.fn(),
     }) satisfies AnswerDeps;
@@ -102,7 +102,7 @@ describe.skipIf(!url)("answer pipeline, statistics route (database)", () => {
   });
 
   it("never counts the practice data under the real source", async () => {
-    const d = { ...deps(plan({})), stats: { tagSource: "manual" as const, taxonomyVersion: "v1", source: "google_business_profile", provisional: false } };
+    const d = { ...deps(plan({})), stats: { source: "google_business_profile", isProvisional: () => false } };
     const { text } = await run(d);
     expect(text).toContain("There are no reviews in scope, so there is nothing to count.");
   });

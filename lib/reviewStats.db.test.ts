@@ -18,6 +18,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { importLocations } from "./db/import";
 import { loadManualTags, ManualTagsFileSchema } from "./db/manualTags";
 import { replaceTagSet } from "./db/tags";
+import { ensureTagSet, getActiveTagSet } from "./db/tagSets";
 import { readonlyTestUrl, resetTestDatabase, testDatabaseUrl } from "./db/testDb";
 import {
   ComparisonError,
@@ -36,9 +37,10 @@ import { z } from "zod";
 const url = testDatabaseUrl();
 const SRC = "synthetic";
 
+/** The active tag set after migrating: hand tags, taxonomy v1. Set in beforeAll. */
+let MANUAL_V1 = 0;
 const scope = (filters: Partial<QueryFilters> = {}, over: Partial<StatsScope> = {}): StatsScope => ({
-  tagSource: "manual",
-  taxonomyVersion: "v1",
+  tagSetId: MANUAL_V1,
   source: SRC,
   filters: { ...EMPTY_FILTERS, ...filters },
   ...over,
@@ -63,6 +65,7 @@ describe.skipIf(!url)("review statistics (database)", () => {
     await resetTestDatabase(url!);
     await admin.connect();
     await ro.connect();
+    MANUAL_V1 = (await getActiveTagSet(admin)).id;
     reviewsJson = z.array(LocationReviewsSchema).parse(JSON.parse(await readFile("data/synthetic/reviews.json", "utf8")));
   });
   afterAll(async () => {
@@ -163,8 +166,7 @@ describe.skipIf(!url)("review statistics (database)", () => {
           await replaceTagSet(admin, {
             source: SRC,
             sourceReviewId,
-            tagSource: "manual",
-            taxonomyVersion: "v1",
+            tagSetId: MANUAL_V1,
             tags: i < mentioning ? [{ theme: "parking", sentiment: "negative" }] : [],
           });
         }
@@ -210,7 +212,7 @@ describe.skipIf(!url)("review statistics (database)", () => {
 
   describe("ranking", () => {
     it("ranks themes by distinct reviews and excludes 'other'", async () => {
-      await replaceTagSet(admin, { source: SRC, sourceReviewId: "syn-L07", tagSource: "manual", taxonomyVersion: "v1", tags: [{ theme: "other", sentiment: "negative" }] });
+      await replaceTagSet(admin, { source: SRC, sourceReviewId: "syn-L07", tagSetId: MANUAL_V1, tags: [{ theme: "other", sentiment: "negative" }] });
       const r = await themeRanking(ro, scope(), { sentiment: "negative" });
       expect(r.themes).toEqual([
         { theme: "parking", count: 5 },
@@ -287,21 +289,24 @@ describe.skipIf(!url)("review statistics (database)", () => {
       await expect(themeMentions(ro, scope({ months: [13] }), { theme: "parking" })).rejects.toThrow(/month/);
     });
 
-    it("requires a taxonomy version", async () => {
-      await expect(themeMentions(ro, scope({}, { taxonomyVersion: " " }), { theme: "parking" })).rejects.toThrow(/taxonomyVersion/);
+    it("requires a tag set id", async () => {
+      await expect(themeMentions(ro, scope({}, { tagSetId: 0 }), { theme: "parking" })).rejects.toThrow(/tagSetId/);
     });
   });
 
-  describe("tag source and version are never mixed", () => {
-    it("llm and manual tags, and other versions, stay separate", async () => {
-      await replaceTagSet(admin, { source: SRC, sourceReviewId: "syn-L02", tagSource: "llm", taxonomyVersion: "v1", tags: [{ theme: "parking", sentiment: "positive" }] });
-      await replaceTagSet(admin, { source: SRC, sourceReviewId: "syn-L04", tagSource: "manual", taxonomyVersion: "v2", tags: [{ theme: "parking", sentiment: "negative" }] });
+  describe("tag sets are never mixed", () => {
+    it("a model's tags and another taxonomy's tags stay out of the hand-tag counts", async () => {
+      const llm = await ensureTagSet(admin, { tagSource: "llm", taxonomyVersion: "v1", modelSnapshot: "gpt-4o-mini-2024-07-18", promptVersion: "p1" });
+      const v2 = await ensureTagSet(admin, { tagSource: "manual", taxonomyVersion: "v2" });
+      const l02 = (await admin.query<{ text: string }>("SELECT text FROM reviews WHERE source_review_id = 'syn-L02'")).rows[0].text;
+      await replaceTagSet(admin, { source: SRC, sourceReviewId: "syn-L02", tagSetId: llm, tags: [{ theme: "parking", sentiment: "positive", evidenceSentence: l02.slice(0, 20) }] });
+      await replaceTagSet(admin, { source: SRC, sourceReviewId: "syn-L04", tagSetId: v2, tags: [{ theme: "parking", sentiment: "negative" }] });
       expect((await themeMentions(ro, scope({ propertyNames: [LODGE] }), { theme: "parking" })).total.count).toBe(7);
-      const llm = await themeMentions(ro, scope({ propertyNames: [LODGE] }, { tagSource: "llm" }), { theme: "parking" });
-      expect(llm.total.count).toBe(1);
-      expect(llm.total.coverage).toMatchObject({ currentTagged: 1, untagged: 9 }); // 10 text reviews, one llm-tagged
-      const v2 = await themeMentions(ro, scope({ propertyNames: [LODGE] }, { taxonomyVersion: "v2" }), { theme: "parking" });
-      expect(v2.total.count).toBe(1);
+      const fromLlm = await themeMentions(ro, scope({ propertyNames: [LODGE] }, { tagSetId: llm }), { theme: "parking" });
+      expect(fromLlm.total.count).toBe(1);
+      expect(fromLlm.total.coverage).toMatchObject({ currentTagged: 1, untagged: 9 }); // 10 text reviews, one llm-tagged
+      const fromV2 = await themeMentions(ro, scope({ propertyNames: [LODGE] }, { tagSetId: v2 }), { theme: "parking" });
+      expect(fromV2.total.count).toBe(1);
     });
   });
 
@@ -316,7 +321,7 @@ describe.skipIf(!url)("review statistics (database)", () => {
       expect(r.total.count).toBe(6); // L01 no longer counted
       expect(r.total.coverage).toMatchObject({ currentTagged: 8, stale: 1, untagged: 1 });
 
-      await replaceTagSet(admin, { source: SRC, sourceReviewId: "syn-L01", tagSource: "manual", taxonomyVersion: "v1", tags: [{ theme: "parking", sentiment: "negative" }] });
+      await replaceTagSet(admin, { source: SRC, sourceReviewId: "syn-L01", tagSetId: MANUAL_V1, tags: [{ theme: "parking", sentiment: "negative" }] });
       const after = await themeMentions(ro, scope({ propertyNames: [LODGE] }), { theme: "parking" });
       expect(after.total.count).toBe(7);
       expect(after.total.coverage.stale).toBe(0);

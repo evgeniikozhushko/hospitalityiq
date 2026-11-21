@@ -1,5 +1,5 @@
 /**
- * Writing tag sets. A tag set for (review, tag_source, taxonomy_version) is always
+ * Writing tags. A review's tags in one tag set (lib/db/tagSets.ts) are always
  * replaced as a whole, in one transaction that locks the review row. The write
  * records a completed `review_tagging` row even when the set has zero themes, which
  * is how "reviewed, no applicable themes" differs from "not yet reviewed".
@@ -12,7 +12,8 @@ export type Sentiment = z.infer<typeof Sentiment>;
 export const TagSource = z.enum(["manual", "llm"]);
 export type TagSource = z.infer<typeof TagSource>;
 
-export type TagInput = { theme: string; sentiment: Sentiment };
+/** `evidenceSentence` is required for model tags and absent for hand tags; the database checks both. */
+export type TagInput = { theme: string; sentiment: Sentiment; evidenceSentence?: string | null };
 
 export class TagSetError extends Error {}
 
@@ -47,14 +48,12 @@ export function normalizeTagSet(tags: TagInput[]): TagInput[] {
 export type ReplaceTagSetArgs = {
   source: string;
   sourceReviewId: string;
-  tagSource: TagSource;
-  taxonomyVersion: string;
+  tagSetId: number;
   tags: TagInput[];
 };
 
 /** Replace the complete tag set; clears `stale`. Zero tags is a valid, completed set. */
 export async function replaceTagSet(client: Client, args: ReplaceTagSetArgs): Promise<void> {
-  if (!args.taxonomyVersion.trim()) throw new TagSetError("taxonomyVersion is required.");
   const tags = normalizeTagSet(args.tags);
 
   await client.query("BEGIN");
@@ -82,18 +81,18 @@ export async function replaceTagSet(client: Client, args: ReplaceTagSetArgs): Pr
     if (unknown.length > 0) throw new TagSetError(`Unknown theme(s): ${unknown.join(", ")}.`);
 
     await client.query(
-      "DELETE FROM review_tagging WHERE review_id = $1 AND tag_source = $2 AND taxonomy_version = $3",
-      [reviewId, args.tagSource, args.taxonomyVersion],
+      "DELETE FROM review_tagging WHERE review_id = $1 AND tag_set_id = $2",
+      [reviewId, args.tagSetId],
     );
-    await client.query(
-      "INSERT INTO review_tagging (review_id, tag_source, taxonomy_version) VALUES ($1, $2, $3)",
-      [reviewId, args.tagSource, args.taxonomyVersion],
-    );
+    await client.query("INSERT INTO review_tagging (review_id, tag_set_id) VALUES ($1, $2)", [
+      reviewId,
+      args.tagSetId,
+    ]);
     for (const t of tags) {
       await client.query(
-        `INSERT INTO review_themes (review_id, tag_source, taxonomy_version, theme_id, sentiment)
+        `INSERT INTO review_themes (review_id, tag_set_id, theme_id, sentiment, evidence_sentence)
          VALUES ($1, $2, $3, $4, $5)`,
-        [reviewId, args.tagSource, args.taxonomyVersion, idBySlug.get(t.theme), t.sentiment],
+        [reviewId, args.tagSetId, idBySlug.get(t.theme), t.sentiment, t.evidenceSentence ?? null],
       );
     }
     await client.query("COMMIT");

@@ -5,7 +5,7 @@
  *
  * Rules (see docs/sql-plan.md):
  *  - "mentions" count DISTINCT reviews, never tag rows.
- *  - every call names ONE tag_source and ONE taxonomy_version; nothing is combined.
+ *  - every call names ONE tag set (lib/db/tagSets.ts); tag sets are never combined.
  *  - every result carries coverage, so untagged never reads as "no mention".
  *  - property names must match a canonical name exactly (case-insensitive); an unknown
  *    name is an error, never silently dropped or widened. A company alias such as BCP
@@ -16,7 +16,7 @@
 import type { Client } from "pg";
 import { isCompanyAlias } from "./filters";
 import type { QueryFilters } from "./schema";
-import type { Sentiment, TagSource } from "./db/tags";
+import type { Sentiment } from "./db/tags";
 
 type Db = Pick<Client, "query">;
 
@@ -33,8 +33,8 @@ export class UnknownThemeError extends StatsInputError {}
 export class ComparisonError extends StatsInputError {}
 
 export type StatsScope = {
-  tagSource: TagSource;
-  taxonomyVersion: string;
+  /** The tag set to count from: normally the active one (resolveTagSet in lib/db/tagSets.ts). */
+  tagSetId: number;
   filters: QueryFilters;
   /** Restrict to one review source (for example "google_business_profile"). */
   source?: string;
@@ -186,9 +186,8 @@ async function resolveProperties(db: Db, f: QueryFilters, source?: string): Prom
 }
 
 function validate(scope: StatsScope): void {
-  if (!scope.taxonomyVersion?.trim()) throw new StatsInputError("taxonomyVersion is required.");
-  if (scope.tagSource !== "manual" && scope.tagSource !== "llm") {
-    throw new StatsInputError("tagSource must be 'manual' or 'llm'.");
+  if (!Number.isInteger(scope.tagSetId) || scope.tagSetId < 1) {
+    throw new StatsInputError("tagSetId must be a tag set id.");
   }
   const f = scope.filters;
   if (f.since) assertDate("since", f.since);
@@ -210,7 +209,7 @@ async function requireTheme(db: Db, slug: string): Promise<void> {
 // SQL
 // ---------------------------------------------------------------------------
 
-/** $1..$10 are the shared scope parameters; queries append their own after these. */
+/** $1..$9 are the shared scope parameters; queries append their own after these. */
 function scopeParams(scope: StatsScope, r: Resolved): unknown[] {
   const f = scope.filters;
   const arr = <T>(x: T[] | null | undefined) => (x && x.length > 0 ? x : null);
@@ -223,8 +222,7 @@ function scopeParams(scope: StatsScope, r: Resolved): unknown[] {
     f.since, // $6
     f.until, // $7
     arr(f.months), // $8
-    scope.tagSource, // $9
-    scope.taxonomyVersion, // $10
+    scope.tagSetId, // $9
   ];
 }
 
@@ -251,7 +249,7 @@ const SCOPE_CTES = `
            count(*) FILTER (WHERE s.has_text AND rt.review_id IS NULL)::int AS untagged
     FROM scope s
     LEFT JOIN review_tagging rt
-           ON rt.review_id = s.id AND rt.tag_source = $9 AND rt.taxonomy_version = $10
+           ON rt.review_id = s.id AND rt.tag_set_id = $9
     GROUP BY s.property_id
   )`;
 
@@ -304,8 +302,8 @@ export async function themeMentions(
       SELECT s.property_id, count(DISTINCT th.review_id)::int AS n
       FROM scope s
       JOIN current_review_themes th
-        ON th.review_id = s.id AND th.tag_source = $9 AND th.taxonomy_version = $10
-      WHERE th.theme = $11 AND ($12::text IS NULL OR th.sentiment = $12)
+        ON th.review_id = s.id AND th.tag_set_id = $9
+      WHERE th.theme = $10 AND ($11::text IS NULL OR th.sentiment = $11)
       GROUP BY s.property_id
     )
     SELECT p.id::int AS property_id, p.name,
@@ -359,8 +357,8 @@ export async function themeRanking(
      SELECT th.theme, count(DISTINCT th.review_id)::int AS n
      FROM scope s
      JOIN current_review_themes th
-       ON th.review_id = s.id AND th.tag_source = $9 AND th.taxonomy_version = $10
-     WHERE th.theme <> 'other' AND ($11::text IS NULL OR th.sentiment = $11)
+       ON th.review_id = s.id AND th.tag_set_id = $9
+     WHERE th.theme <> 'other' AND ($10::text IS NULL OR th.sentiment = $10)
      GROUP BY th.theme
      ORDER BY n DESC, th.theme`,
     [...scopeParams(scope, resolved), sentiment],

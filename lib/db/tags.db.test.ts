@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { importLocations } from "./import";
 import { loadManualTags } from "./manualTags";
 import { replaceTagSet, TagSetError } from "./tags";
+import { getActiveTagSet } from "./tagSets";
 import { resetTestDatabase, testDatabaseUrl } from "./testDb";
 
 const url = testDatabaseUrl();
@@ -25,11 +26,12 @@ const loc = (reviews: ReturnType<typeof rv>[]) => ({
 describe.skipIf(!url)("tag sets and manual tags (database)", () => {
   const c = new Client({ connectionString: url! });
   const q = async (sql: string, p: unknown[] = []) => (await c.query(sql, p)).rows;
-  const base = { source: SRC, tagSource: "manual" as const, taxonomyVersion: "v1" };
+  const base = { source: SRC, tagSetId: 0 };
 
   beforeAll(async () => {
     await resetTestDatabase(url!);
     await c.connect();
+    base.tagSetId = (await getActiveTagSet(c)).id; // manual v1
   });
   afterAll(async () => {
     await c.end();

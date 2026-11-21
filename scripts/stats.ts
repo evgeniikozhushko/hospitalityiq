@@ -4,16 +4,18 @@
  *   npm run stats -- mentions --theme parking [--sentiment negative]
  *   npm run stats -- top --sentiment negative [--limit 5]
  *   npm run stats -- trend --theme parking --since 2026-02-01 --until 2026-02-28
+ *   npm run stats -- sets                      (list tag sets; * marks the active one)
  *
  * Filters: --property "Name" (repeatable) --type hotel --since YYYY-MM-DD --until YYYY-MM-DD
  *          --months 1,2 --min-rating 4 --max-rating 5 --source google_business_profile
- * Tags:    --tag-source manual|llm (default manual)  --taxonomy v1 (default v1)
+ * Tags:    --tag-set <id> (default: the active tag set), to compare a set that is not active
  */
 import { parseArgs } from "node:util";
 import { Client } from "pg";
 import { requireUrl } from "../lib/db/config";
 import { PropertyType, EMPTY_FILTERS } from "../lib/schema";
-import { Sentiment, TagSource } from "../lib/db/tags";
+import { Sentiment } from "../lib/db/tags";
+import { listTagSets, resolveTagSet } from "../lib/db/tagSets";
 import {
   StatsInputError,
   themeMentions,
@@ -48,15 +50,14 @@ async function main() {
       "min-rating": { type: "string" },
       "max-rating": { type: "string" },
       source: { type: "string" },
-      "tag-source": { type: "string", default: "manual" },
-      taxonomy: { type: "string", default: "v1" },
+      "tag-set": { type: "string" },
     },
   });
   const command = positionals[0];
   const sentiment = v.sentiment ? Sentiment.parse(v.sentiment) : null;
-  const scope: StatsScope = {
-    tagSource: TagSource.parse(v["tag-source"]),
-    taxonomyVersion: v.taxonomy!,
+  const tagSetArg = v["tag-set"];
+  if (tagSetArg !== undefined && !/^\d+$/.test(tagSetArg)) throw new StatsInputError("--tag-set must be a tag set id.");
+  const filterScope: Omit<StatsScope, "tagSetId"> = {
     source: v.source,
     filters: {
       ...EMPTY_FILTERS,
@@ -73,6 +74,16 @@ async function main() {
   const client = new Client({ connectionString: requireUrl("readonly") });
   await client.connect();
   try {
+    if (command === "sets") {
+      for (const t of await listTagSets(client)) {
+        const model = t.tagSource === "llm" ? ` ${t.modelSnapshot} prompt ${t.promptVersion}` : "";
+        const gate = t.tagSource === "llm" ? (t.gatePassedAt ? " gate passed" : " not gated") : "";
+        console.log(`${t.active ? "*" : " "} ${String(t.id).padStart(3)}  ${t.tagSource} ${t.taxonomyVersion}${model}${gate}`);
+      }
+      return;
+    }
+    const tagSet = await resolveTagSet(client, tagSetArg === undefined ? null : Number(tagSetArg));
+    const scope: StatsScope = { ...filterScope, tagSetId: tagSet.id };
     if (command === "mentions") {
       if (!v.theme) throw new StatsInputError("--theme is required.");
       printMentions(await themeMentions(client, scope, { theme: v.theme, sentiment }));

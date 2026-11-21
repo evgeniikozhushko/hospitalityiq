@@ -18,6 +18,8 @@ export const READONLY_OBJECTS = [
   "themes",
   "review_tagging",
   "current_review_themes",
+  "tag_sets",
+  "active_tag_set",
 ] as const;
 
 export async function setupRoles(
