@@ -52,24 +52,26 @@ export type ReplaceTagSetArgs = {
   tags: TagInput[];
 };
 
+/** Lock the review row inside the caller's transaction; it serializes writers of one review. */
+async function lockTaggableReview(client: Client, source: string, sourceReviewId: string): Promise<string> {
+  const rev = await client.query<{ id: string; has_text: boolean }>(
+    "SELECT id, has_text FROM reviews WHERE source = $1 AND source_review_id = $2 FOR UPDATE",
+    [source, sourceReviewId],
+  );
+  if (rev.rowCount === 0) throw new TagSetError(`Review ${source}/${sourceReviewId} does not exist.`);
+  if (!rev.rows[0].has_text) {
+    throw new TagSetError(`Review ${sourceReviewId} has no text, so it cannot be tagged.`);
+  }
+  return rev.rows[0].id;
+}
+
 /** Replace the complete tag set; clears `stale`. Zero tags is a valid, completed set. */
 export async function replaceTagSet(client: Client, args: ReplaceTagSetArgs): Promise<void> {
   const tags = normalizeTagSet(args.tags);
 
   await client.query("BEGIN");
   try {
-    // Locking the review row serializes concurrent writers of the same review.
-    const rev = await client.query<{ id: string; has_text: boolean }>(
-      "SELECT id, has_text FROM reviews WHERE source = $1 AND source_review_id = $2 FOR UPDATE",
-      [args.source, args.sourceReviewId],
-    );
-    if (rev.rowCount === 0) {
-      throw new TagSetError(`Review ${args.source}/${args.sourceReviewId} does not exist.`);
-    }
-    if (!rev.rows[0].has_text) {
-      throw new TagSetError(`Review ${args.sourceReviewId} has no text, so it cannot be tagged.`);
-    }
-    const reviewId = rev.rows[0].id;
+    const reviewId = await lockTaggableReview(client, args.source, args.sourceReviewId);
 
     const slugs = [...new Set(tags.map((t) => t.theme))];
     const themes = await client.query<{ id: string; slug: string }>(
@@ -95,6 +97,30 @@ export async function replaceTagSet(client: Client, args: ReplaceTagSetArgs): Pr
         [reviewId, args.tagSetId, idBySlug.get(t.theme), t.sentiment, t.evidenceSentence ?? null],
       );
     }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  }
+}
+
+export type FlagReviewArgs = { source: string; sourceReviewId: string; tagSetId: number; error: string };
+
+/**
+ * Record that a review's tags failed validation in this tag set. Any earlier tags for
+ * it in the set are removed, and coverage shows it as flagged, so the review is never
+ * silently dropped from what counts are based on.
+ */
+export async function flagReview(client: Client, args: FlagReviewArgs): Promise<void> {
+  if (!args.error.trim()) throw new TagSetError("A flagged review needs the reason it failed.");
+  await client.query("BEGIN");
+  try {
+    const reviewId = await lockTaggableReview(client, args.source, args.sourceReviewId);
+    await client.query("DELETE FROM review_tagging WHERE review_id = $1 AND tag_set_id = $2", [reviewId, args.tagSetId]);
+    await client.query(
+      `INSERT INTO review_tagging (review_id, tag_set_id, status, error) VALUES ($1, $2, 'failed_validation', $3)`,
+      [reviewId, args.tagSetId, args.error],
+    );
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");

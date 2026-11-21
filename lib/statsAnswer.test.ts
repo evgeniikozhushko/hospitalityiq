@@ -34,6 +34,7 @@ const cov = (c: Partial<Coverage> = {}): Coverage => ({
   textReviews: 8,
   currentTagged: 8,
   stale: 0,
+  flagged: 0,
   untagged: 0,
   ...c,
 });
@@ -76,6 +77,15 @@ describe("renderStats: mentions", () => {
     });
     expect(text).toContain(
       "2 of 8 tagged reviews mention Parking (50 reviews in scope: 8 tagged, 3 with outdated tags, 37 not yet tagged, 2 rating-only).",
+    );
+  });
+
+  it("shows reviews whose tags failed validation as flagged, so they never read as untagged or absent", () => {
+    const text = mentions({
+      total: { count: 2, coverage: cov({ totalReviews: 50, textReviews: 48, currentTagged: 8, stale: 3, flagged: 1, untagged: 36 }) },
+    });
+    expect(text).toContain(
+      "2 of 8 tagged reviews mention Parking (50 reviews in scope: 8 tagged, 3 with outdated tags, 1 flagged for review, 36 not yet tagged, 2 rating-only).",
     );
   });
 

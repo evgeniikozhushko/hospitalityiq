@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { importLocations } from "./import";
 import { runMigrations } from "./migrate";
 import { rollbackMigration } from "./rollback";
-import { replaceTagSet } from "./tags";
+import { flagReview, replaceTagSet, TagSetError } from "./tags";
 import { activateTagSet, ensureTagSet, GateNotPassedError, getActiveTagSet, listTagSets } from "./tagSets";
 import { resetTestDatabase, testDatabaseUrl } from "./testDb";
 
@@ -140,6 +140,43 @@ describe.skipIf(!url)("tag sets (database)", () => {
     });
   });
 
+  describe("flagged reviews", () => {
+    const flag = (tagSetId: number, error = "theme 'breakfast' is not in taxonomy v1") =>
+      flagReview(c, { source: SRC, sourceReviewId: "r1", tagSetId, error });
+    const tagging = () => q("SELECT status, error, stale FROM review_tagging");
+
+    it("records the failure and replaces any earlier tags in that set", async () => {
+      const a = await ensureTagSet(c, MODEL);
+      await replaceTagSet(c, { source: SRC, sourceReviewId: "r1", tagSetId: a, tags: [{ theme: "parking", sentiment: "negative", evidenceSentence: "Lovely room." }] });
+      await flag(a);
+      expect(await tagging()).toEqual([{ status: "failed_validation", error: "theme 'breakfast' is not in taxonomy v1", stale: false }]);
+      expect(await q("SELECT 1 FROM review_themes")).toHaveLength(0);
+      expect(await q("SELECT 1 FROM current_review_themes")).toHaveLength(0);
+    });
+
+    it("needs a reason, and the database refuses a reason without a failure or a failure without one", async () => {
+      const a = await ensureTagSet(c, MODEL);
+      await expect(flag(a, " ")).rejects.toThrow(TagSetError);
+      const [{ id }] = await q<{ id: string }>("SELECT id FROM reviews");
+      await expect(c.query("INSERT INTO review_tagging (review_id, tag_set_id, status) VALUES ($1, $2, 'failed_validation')", [id, a])).rejects.toThrow(/review_tagging_error_iff_failed/);
+      await expect(c.query("INSERT INTO review_tagging (review_id, tag_set_id, error) VALUES ($1, $2, 'why')", [id, a])).rejects.toThrow(/review_tagging_error_iff_failed/);
+    });
+
+    it("cannot hold themes, and a later successful tagging clears the flag", async () => {
+      const a = await ensureTagSet(c, MODEL);
+      await flag(a);
+      await expect(
+        c.query(
+          `INSERT INTO review_themes (review_id, tag_set_id, theme_id, sentiment, evidence_sentence)
+           SELECT r.id, $1, t.id, 'negative', 'Lovely room.' FROM reviews r, themes t WHERE t.slug = 'rooms'`,
+          [a],
+        ),
+      ).rejects.toThrow(/is flagged/);
+      await replaceTagSet(c, { source: SRC, sourceReviewId: "r1", tagSetId: a, tags: [{ theme: "rooms", sentiment: "positive", evidenceSentence: "Lovely room." }] });
+      expect(await tagging()).toEqual([{ status: "ok", error: null, stale: false }]);
+    });
+  });
+
   describe("down migration", () => {
     const columns = (table: string) =>
       q<{ column_name: string; data_type: string; is_nullable: string }>(
@@ -156,7 +193,9 @@ describe.skipIf(!url)("tag sets (database)", () => {
 
     it("refuses while a model tag set exists", async () => {
       await ensureTagSet(c, MODEL);
+      await rollbackMigration(c, "0004_flagged_tagging");
       await expect(rollbackMigration(c, "0003_tag_sets")).rejects.toThrow(/model tag sets exist/);
+      await runMigrations(c, path.join(process.cwd(), "db/migrations")); // put 0004 back
       expect((await getActiveTagSet(c)).id).toBe(manualV1); // nothing changed
     });
 
@@ -165,6 +204,7 @@ describe.skipIf(!url)("tag sets (database)", () => {
       await write2(manualV1, [{ theme: "parking", sentiment: "negative" }, { theme: "rooms", sentiment: "positive" }]);
       await write2(v2, [{ theme: "value", sentiment: "negative" }]);
 
+      await rollbackMigration(c, "0004_flagged_tagging");
       await rollbackMigration(c, "0003_tag_sets");
 
       expect(await columns("review_tagging")).toEqual([
@@ -188,8 +228,11 @@ describe.skipIf(!url)("tag sets (database)", () => {
         { source_review_id: "r1", tag_source: "manual", taxonomy_version: "v2", slug: "value", sentiment: "negative", stale: false },
       ]);
 
-      // Forward again: 0003 is the only migration applied, and the same tags come back.
-      expect(await runMigrations(c, path.join(process.cwd(), "db/migrations"))).toEqual(["0003_tag_sets.sql"]);
+      // Forward again: 0003 and 0004 are applied again, and the same tags come back.
+      expect(await runMigrations(c, path.join(process.cwd(), "db/migrations"))).toEqual([
+        "0003_tag_sets.sql",
+        "0004_flagged_tagging.sql",
+      ]);
       const back = await q(
         `SELECT ts.taxonomy_version, t.slug, th.sentiment FROM review_themes th
          JOIN tag_sets ts ON ts.id = th.tag_set_id JOIN themes t ON t.id = th.theme_id ORDER BY 1, 2`,

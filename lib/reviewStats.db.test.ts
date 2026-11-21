@@ -17,7 +17,7 @@ import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { importLocations } from "./db/import";
 import { loadManualTags, ManualTagsFileSchema } from "./db/manualTags";
-import { replaceTagSet } from "./db/tags";
+import { flagReview, replaceTagSet } from "./db/tags";
 import { ensureTagSet, getActiveTagSet } from "./db/tagSets";
 import { readonlyTestUrl, resetTestDatabase, testDatabaseUrl } from "./db/testDb";
 import {
@@ -90,8 +90,8 @@ describe.skipIf(!url)("review statistics (database)", () => {
     it("reports coverage: rating-only is not untagged, zero-theme review counts as tagged", async () => {
       const r = await themeMentions(ro, scope(), { theme: "parking" });
       const lodge = r.rows.find((x) => x.propertyName === LODGE)!;
-      expect(lodge.coverage).toEqual({ totalReviews: 11, textReviews: 10, currentTagged: 9, stale: 0, untagged: 1 });
-      expect(r.total.coverage).toEqual({ totalReviews: 17, textReviews: 16, currentTagged: 15, stale: 0, untagged: 1 });
+      expect(lodge.coverage).toEqual({ totalReviews: 11, textReviews: 10, currentTagged: 9, stale: 0, flagged: 0, untagged: 1 });
+      expect(r.total.coverage).toEqual({ totalReviews: 17, textReviews: 16, currentTagged: 15, stale: 0, flagged: 0, untagged: 1 });
     });
   });
 
@@ -101,7 +101,7 @@ describe.skipIf(!url)("review statistics (database)", () => {
     it("Jan 1 - Feb 28 includes the review at 23:59 local on Feb 28 (already March in UTC)", async () => {
       const r = await themeMentions(ro, scope({ ...lodge, since: "2026-01-01", until: "2026-02-28" }), { theme: "parking" });
       expect(r.total.count).toBe(5); // L01 L02 L03 L05 L10; a UTC window would give 4
-      expect(r.total.coverage).toEqual({ totalReviews: 9, textReviews: 8, currentTagged: 7, stale: 0, untagged: 1 });
+      expect(r.total.coverage).toEqual({ totalReviews: 9, textReviews: 8, currentTagged: 7, stale: 0, flagged: 0, untagged: 1 });
     });
 
     it("a window starting Mar 1 includes 00:00 local, excludes 23:59 the night before", async () => {
@@ -307,6 +307,21 @@ describe.skipIf(!url)("review statistics (database)", () => {
       expect(fromLlm.total.coverage).toMatchObject({ currentTagged: 1, untagged: 9 }); // 10 text reviews, one llm-tagged
       const fromV2 = await themeMentions(ro, scope({ propertyNames: [LODGE] }, { tagSetId: v2 }), { theme: "parking" });
       expect(fromV2.total.count).toBe(1);
+    });
+  });
+
+  describe("flagged reviews", () => {
+    it("a review whose model tags failed validation is in coverage as flagged, never counted or dropped", async () => {
+      const llm = await ensureTagSet(admin, { tagSource: "llm", taxonomyVersion: "v1", modelSnapshot: "gpt-4o-mini-2024-07-18", promptVersion: "p1" });
+      const text = async (id: string) =>
+        (await admin.query<{ text: string }>("SELECT text FROM reviews WHERE source_review_id = $1", [id])).rows[0].text;
+      await replaceTagSet(admin, { source: SRC, sourceReviewId: "syn-L01", tagSetId: llm, tags: [{ theme: "parking", sentiment: "negative", evidenceSentence: (await text("syn-L01")).slice(0, 15) }] });
+      await flagReview(admin, { source: SRC, sourceReviewId: "syn-L02", tagSetId: llm, error: "sentiment missing" });
+      const r = await themeMentions(ro, scope({ propertyNames: [LODGE] }, { tagSetId: llm }), { theme: "parking" });
+      expect(r.total.count).toBe(1);
+      expect(r.total.coverage).toEqual({ totalReviews: 11, textReviews: 10, currentTagged: 1, stale: 0, flagged: 1, untagged: 8 });
+      const top = await themeRanking(ro, scope({ propertyNames: [LODGE] }, { tagSetId: llm }), {});
+      expect(top.coverage.flagged).toBe(1);
     });
   });
 

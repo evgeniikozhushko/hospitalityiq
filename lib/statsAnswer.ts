@@ -110,12 +110,13 @@ function filterParts(f: QueryFilters, dates: boolean): string[] {
 /** The bold first line naming what was counted, over which scope and filters. */
 const header = (...parts: string[]) => `**${parts.filter(Boolean).join(" · ")}**`;
 
-/** "(50 reviews in scope: 8 tagged, 3 with outdated tags, 37 not yet tagged, 2 rating-only)" */
+/** "(50 reviews in scope: 8 tagged, 3 with outdated tags, 1 flagged for review, 36 not yet tagged, 2 rating-only)" */
 function coverageText(c: Coverage): string {
   const ratingOnly = c.totalReviews - c.textReviews;
   if (c.currentTagged === c.totalReviews) return `(${reviews(c.totalReviews)} in scope, all tagged)`;
   const parts = [`${c.currentTagged} tagged`];
   if (c.stale > 0) parts.push(`${c.stale} with outdated tags`);
+  if (c.flagged > 0) parts.push(`${c.flagged} flagged for review`);
   if (c.untagged > 0) parts.push(`${c.untagged} not yet tagged`);
   if (ratingOnly > 0) parts.push(`${ratingOnly} rating-only`);
   return `(${reviews(c.totalReviews)} in scope: ${parts.join(", ")})`;

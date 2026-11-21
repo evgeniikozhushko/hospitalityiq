@@ -46,6 +46,8 @@ export type Coverage = {
   textReviews: number;
   currentTagged: number;
   stale: number;
+  /** Model tags that failed validation: the review is in scope but not counted. */
+  flagged: number;
   untagged: number;
 };
 
@@ -244,8 +246,9 @@ const SCOPE_CTES = `
     SELECT s.property_id,
            count(*)::int AS total_reviews,
            count(*) FILTER (WHERE s.has_text)::int AS text_reviews,
-           count(*) FILTER (WHERE s.has_text AND rt.review_id IS NOT NULL AND NOT rt.stale)::int AS current_tagged,
+           count(*) FILTER (WHERE s.has_text AND NOT rt.stale AND rt.status = 'ok')::int AS current_tagged,
            count(*) FILTER (WHERE s.has_text AND rt.stale)::int AS stale,
+           count(*) FILTER (WHERE s.has_text AND NOT rt.stale AND rt.status <> 'ok')::int AS flagged,
            count(*) FILTER (WHERE s.has_text AND rt.review_id IS NULL)::int AS untagged
     FROM scope s
     LEFT JOIN review_tagging rt
@@ -258,6 +261,7 @@ type CovRow = {
   text_reviews: number;
   current_tagged: number;
   stale: number;
+  flagged: number;
   untagged: number;
 };
 
@@ -266,6 +270,7 @@ const toCoverage = (r: Partial<CovRow> | undefined): Coverage => ({
   textReviews: r?.text_reviews ?? 0,
   currentTagged: r?.current_tagged ?? 0,
   stale: r?.stale ?? 0,
+  flagged: r?.flagged ?? 0,
   untagged: r?.untagged ?? 0,
 });
 
@@ -276,9 +281,10 @@ const sumCoverage = (cs: Coverage[]): Coverage =>
       textReviews: a.textReviews + c.textReviews,
       currentTagged: a.currentTagged + c.currentTagged,
       stale: a.stale + c.stale,
+      flagged: a.flagged + c.flagged,
       untagged: a.untagged + c.untagged,
     }),
-    { totalReviews: 0, textReviews: 0, currentTagged: 0, stale: 0, untagged: 0 },
+    { totalReviews: 0, textReviews: 0, currentTagged: 0, stale: 0, flagged: 0, untagged: 0 },
   );
 
 // ---------------------------------------------------------------------------
@@ -308,7 +314,7 @@ export async function themeMentions(
     )
     SELECT p.id::int AS property_id, p.name,
            coalesce(m.n, 0)::int AS n,
-           c.total_reviews, c.text_reviews, c.current_tagged, c.stale, c.untagged
+           c.total_reviews, c.text_reviews, c.current_tagged, c.stale, c.flagged, c.untagged
     FROM properties p
     LEFT JOIN cov c ON c.property_id = p.id
     LEFT JOIN mentions m ON m.property_id = p.id
@@ -371,6 +377,7 @@ export async function themeRanking(
             coalesce(sum(text_reviews), 0)::int AS text_reviews,
             coalesce(sum(current_tagged), 0)::int AS current_tagged,
             coalesce(sum(stale), 0)::int AS stale,
+            coalesce(sum(flagged), 0)::int AS flagged,
             coalesce(sum(untagged), 0)::int AS untagged
      FROM cov`,
     scopeParams(scope, resolved),

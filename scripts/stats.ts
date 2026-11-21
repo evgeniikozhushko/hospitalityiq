@@ -27,7 +27,7 @@ import {
 } from "../lib/reviewStats";
 
 const cov = (c: Coverage) =>
-  `${c.totalReviews} reviews, ${c.textReviews} with text: ${c.currentTagged} tagged, ${c.stale} stale, ${c.untagged} untagged`;
+  `${c.totalReviews} reviews, ${c.textReviews} with text: ${c.currentTagged} tagged, ${c.stale} stale, ${c.flagged} flagged, ${c.untagged} untagged`;
 
 function printMentions(m: ThemeMentions, heading?: string) {
   console.log(heading ?? `${m.theme}${m.sentiment ? ` (${m.sentiment})` : ""} in ${m.scopeLabel}`);
