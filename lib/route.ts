@@ -98,13 +98,11 @@ export function resolveRoute(plan: PlannerOutput, knownThemes: ThemeInfo[], toda
   if (!filters.since) {
     return fallback("no_window", 'Tell me which period to compare, for example "over the last year".');
   }
+  // The window ends today at the latest. "This year" asked in November would otherwise
+  // compare ten and a half months with the full twelve before them.
+  const until = filters.until && filters.until < today ? filters.until : today;
   return {
     route: "statistics",
-    query: {
-      kind: "trend",
-      theme: theme.slug,
-      sentiment,
-      filters: { ...filters, until: filters.until ?? today },
-    },
+    query: { kind: "trend", theme: theme.slug, sentiment, filters: { ...filters, until } },
   };
 }
