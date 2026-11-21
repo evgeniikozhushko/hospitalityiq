@@ -7,6 +7,19 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Client } from "pg";
 
+/**
+ * Everything the question path reads, and nothing else. `current_review_themes` is a
+ * view, so the role needs no grant on `review_themes` underneath it. A new table the
+ * statistics must read goes here; a table holding campaign figures never does.
+ */
+export const READONLY_OBJECTS = [
+  "properties",
+  "reviews",
+  "themes",
+  "review_tagging",
+  "current_review_themes",
+] as const;
+
 export async function setupRoles(
   adminUrl: string,
   readonlyUrl: string,
@@ -37,6 +50,7 @@ export async function setupRoles(
     // A read-only role must be unable to write even if defaults change later.
     await client.query(`ALTER ROLE ${ident} SET default_transaction_read_only = on`);
     const sql = (await readFile(rolesSqlPath, "utf8"))
+      .replaceAll(":ro_objects", READONLY_OBJECTS.map((o) => client.escapeIdentifier(o)).join(", "))
       .replaceAll(":ro_role", ident)
       .replaceAll(":owner_role", client.escapeIdentifier(owner));
     await client.query(sql);

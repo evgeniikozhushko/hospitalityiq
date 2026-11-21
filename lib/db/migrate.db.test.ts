@@ -6,6 +6,7 @@ import path from "node:path";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runMigrations } from "./migrate";
+import { READONLY_OBJECTS, setupRoles } from "./setup";
 import { readonlyTestUrl, resetTestDatabase, testDatabaseUrl } from "./testDb";
 
 const url = testDatabaseUrl();
@@ -85,5 +86,63 @@ describe.skipIf(!url)("migrations (database)", () => {
     } finally {
       await ro.end();
     }
+  });
+
+  describe("read-only role grants", () => {
+    const denied = /permission denied/;
+    const asReadonly = async <T>(fn: (ro: Client) => Promise<T>): Promise<T> => {
+      const ro = new Client({ connectionString: readonlyTestUrl(url!) });
+      await ro.connect();
+      try {
+        return await fn(ro);
+      } finally {
+        await ro.end();
+      }
+    };
+
+    it("can read exactly the tables and view the statistics use", async () => {
+      await asReadonly(async (ro) => {
+        for (const name of READONLY_OBJECTS) {
+          await expect(ro.query(`SELECT 1 FROM ${name} LIMIT 1`), name).resolves.toBeDefined();
+        }
+      });
+    });
+
+    it("cannot read tables outside that list", async () => {
+      await asReadonly(async (ro) => {
+        for (const name of ["imports", "review_themes", "schema_migrations"]) {
+          await expect(ro.query(`SELECT 1 FROM ${name} LIMIT 1`), name).rejects.toThrow(denied);
+        }
+      });
+    });
+
+    it("cannot read a table created after setup, such as a future campaign table", async () => {
+      await admin.query("CREATE TABLE campaign_figures_probe (spend numeric)");
+      try {
+        await asReadonly(async (ro) => {
+          await expect(ro.query("SELECT * FROM campaign_figures_probe")).rejects.toThrow(denied);
+        });
+      } finally {
+        await admin.query("DROP TABLE campaign_figures_probe");
+      }
+    });
+
+    it("removes the old schema-wide grants when setup runs again", async () => {
+      const role = admin.escapeIdentifier(new URL(readonlyTestUrl(url!)).username);
+      await admin.query(`GRANT SELECT ON ALL TABLES IN SCHEMA public TO ${role}`);
+      await admin.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO ${role}`);
+      await setupRoles(url!, readonlyTestUrl(url!));
+
+      await admin.query("CREATE TABLE campaign_figures_probe (spend numeric)");
+      try {
+        await asReadonly(async (ro) => {
+          await expect(ro.query("SELECT 1 FROM imports")).rejects.toThrow(denied);
+          await expect(ro.query("SELECT 1 FROM campaign_figures_probe")).rejects.toThrow(denied);
+          await expect(ro.query("SELECT 1 FROM reviews LIMIT 1")).resolves.toBeDefined();
+        });
+      } finally {
+        await admin.query("DROP TABLE campaign_figures_probe");
+      }
+    });
   });
 });
