@@ -18,7 +18,7 @@ const ev = (id: number, event: AskEvent) => sig(id, { kind: "event", event });
 const apply = (actions: AskAction[], from: AskState = initialAskState) => actions.reduce(askReducer, from);
 
 const plan = (id: number) => ev(id, { type: "plan", plan: reviewPlan, droppedPropertyNames: ["X"] });
-const sources = (id: number, relaxed = false) => ev(id, { type: "sources", sources: [source], relaxed });
+const sources = (id: number, relaxed = false) => ev(id, { type: "sources", sources: [source], relaxed, fallback: null });
 const delta = (id: number, text: string) => ev(id, { type: "delta", text });
 const done = (id: number) => ev(id, { type: "done" });
 

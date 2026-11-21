@@ -112,6 +112,15 @@ describe("resolveRoute: statistics", () => {
     expect(d.route === "statistics" && d.query.filters.until).toBe("2025-06-30");
   });
 
+  it("ends a trend today when the window runs into the future", () => {
+    const d = resolveRoute(
+      plan({ stat: stat({ kind: "trend" }) }, { since: "2026-01-01", until: "2026-12-31" }),
+      THEMES,
+      TODAY,
+    );
+    expect(d.route === "statistics" && d.query.filters.until).toBe(TODAY);
+  });
+
   it("treats theme slugs case-insensitively and trims them", () => {
     const d = resolveRoute(plan({ stat: stat({ themes: [" Parking "] }) }), THEMES, TODAY);
     expect(d.route === "statistics" && d.query.kind === "mentions" && d.query.theme).toBe("parking");

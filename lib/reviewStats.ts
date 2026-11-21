@@ -338,7 +338,11 @@ export async function themeMentions(
   };
 }
 
-/** Top themes by distinct reviews, excluding "other". */
+/**
+ * Top themes by distinct reviews, excluding "other". Themes tied with the last place are
+ * all kept, so the list can be longer than `limit`: cutting a tie alphabetically would
+ * drop a theme that is mentioned exactly as often as one that is shown.
+ */
 export async function themeRanking(
   db: Db,
   scope: StatsScope,
@@ -358,10 +362,11 @@ export async function themeRanking(
        ON th.review_id = s.id AND th.tag_source = $9 AND th.taxonomy_version = $10
      WHERE th.theme <> 'other' AND ($11::text IS NULL OR th.sentiment = $11)
      GROUP BY th.theme
-     ORDER BY n DESC, th.theme
-     LIMIT $12`,
-    [...scopeParams(scope, resolved), sentiment, limit],
+     ORDER BY n DESC, th.theme`,
+    [...scopeParams(scope, resolved), sentiment],
   );
+  const cutoff = ranked.rows[limit - 1]?.n ?? 0;
+  const kept = ranked.rows.filter((r) => r.n >= cutoff);
   const cov = await db.query<CovRow>(
     `WITH ${SCOPE_CTES}
      SELECT coalesce(sum(total_reviews), 0)::int AS total_reviews,
@@ -375,7 +380,7 @@ export async function themeRanking(
   return {
     sentiment,
     scopeLabel: resolved.scopeLabel,
-    themes: ranked.rows.map((r) => ({ theme: r.theme, count: r.n })),
+    themes: kept.map((r) => ({ theme: r.theme, count: r.n })),
     coverage: toCoverage(cov.rows[0]),
   };
 }

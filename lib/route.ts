@@ -34,6 +34,10 @@ export const OTHER_THEME = "other";
 
 export const FALLBACK_SUFFIX = "This answer is based on a sample of reviews, not an exact count.";
 
+/** Shown when a question ranks properties but names no theme (code property_needs_theme). */
+export const PROPERTY_NEEDS_THEME_REASON =
+  'I can rank properties for one theme at a time, for example "which property gets the most parking complaints".';
+
 const fallback = (code: FallbackCode, reason: string): RouteDecision => ({
   route: "retrieval",
   fallback: { code, note: `${reason} ${FALLBACK_SUFFIX}` },
@@ -64,10 +68,7 @@ export function resolveRoute(plan: PlannerOutput, knownThemes: ThemeInfo[], toda
   }
 
   if (ranksProperties && requested.length === 0) {
-    return fallback(
-      "property_needs_theme",
-      'I can rank properties for one theme at a time, for example "which property gets the most parking complaints".',
-    );
+    return fallback("property_needs_theme", PROPERTY_NEEDS_THEME_REASON);
   }
 
   const labels = countable(knownThemes).map((t) => t.label);
@@ -97,13 +98,11 @@ export function resolveRoute(plan: PlannerOutput, knownThemes: ThemeInfo[], toda
   if (!filters.since) {
     return fallback("no_window", 'Tell me which period to compare, for example "over the last year".');
   }
+  // The window ends today at the latest. "This year" asked in November would otherwise
+  // compare ten and a half months with the full twelve before them.
+  const until = filters.until && filters.until < today ? filters.until : today;
   return {
     route: "statistics",
-    query: {
-      kind: "trend",
-      theme: theme.slug,
-      sentiment,
-      filters: { ...filters, until: filters.until ?? today },
-    },
+    query: { kind: "trend", theme: theme.slug, sentiment, filters: { ...filters, until } },
   };
 }

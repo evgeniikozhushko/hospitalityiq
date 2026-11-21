@@ -92,6 +92,9 @@ const EventSchemas = {
     type: z.literal("sources"),
     sources: z.array(SourceWireSchema),
     relaxed: z.boolean(),
+    fallback: z
+      .enum(["no_kind", "several_themes", "not_a_theme", "property_needs_theme", "seasonal_trend", "no_window"])
+      .nullable(),
   }),
   stats: z.object({ type: z.literal("stats"), outcome: StatsOutcomeWireSchema }),
   delta: z.object({ type: z.literal("delta"), text: z.string() }),

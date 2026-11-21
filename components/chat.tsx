@@ -211,7 +211,7 @@ export function Chat() {
           {state.droppedPropertyNames.length > 0 ? (
             <Notice kind="dropped_properties" title="Property not recognised">
               No property called {state.droppedPropertyNames.map((n) => `“${n}”`).join(", ")} was
-              found, so that name was ignored.
+              found{state.sources.length > 0 ? ", so that name was ignored" : ""}.
             </Notice>
           ) : null}
 
