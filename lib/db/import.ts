@@ -149,7 +149,11 @@ async function importProperty(
       );
       if (textChanged) {
         // The old tags describe old text: drop LLM tags, keep manual ones but mark them stale.
-        await client.query("DELETE FROM review_tagging WHERE review_id = $1 AND tag_source = 'llm'", [old.id]);
+        await client.query(
+          `DELETE FROM review_tagging rt USING tag_sets ts
+           WHERE rt.review_id = $1 AND ts.id = rt.tag_set_id AND ts.tag_source = 'llm'`,
+          [old.id],
+        );
         await client.query("UPDATE review_tagging SET stale = true WHERE review_id = $1", [old.id]);
         result.textChanged++;
       }

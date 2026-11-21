@@ -83,13 +83,21 @@ describe.skipIf(!url)("ingest (database)", () => {
   it("an edited review updates in place: llm tags dropped, manual kept and stale", async () => {
     await importLocations(c, [lodge(full)]);
     const [{ id }] = await q("SELECT id FROM reviews WHERE source_review_id = 'r1'");
+    const llm = await c.query<{ id: string }>(
+      `INSERT INTO tag_sets (tag_source, taxonomy_version, model_snapshot, prompt_version)
+       VALUES ('llm', 'v1', 'gpt-4o-mini-2024-07-18', 'p1') RETURNING id`,
+    );
     await c.query(
-      `INSERT INTO review_tagging (review_id, tag_source, taxonomy_version) VALUES ($1,'manual','v1'), ($1,'llm','v1')`,
-      [id],
+      `INSERT INTO review_tagging (review_id, tag_set_id)
+       SELECT $1::bigint, id FROM tag_sets WHERE tag_source = 'manual' AND taxonomy_version = 'v1'
+       UNION ALL SELECT $1::bigint, $2::bigint`,
+      [id, llm.rows[0].id],
     );
     const res = await importLocations(c, [lodge([review("r1", { comment: "Totally different text" }), review("r2"), review("r3")])]);
     expect(res[0].textChanged).toBe(1);
-    const tagging = await q("SELECT tag_source, stale FROM review_tagging ORDER BY tag_source");
+    const tagging = await q(
+      "SELECT ts.tag_source, rt.stale FROM review_tagging rt JOIN tag_sets ts ON ts.id = rt.tag_set_id ORDER BY 1",
+    );
     expect(tagging).toEqual([{ tag_source: "manual", stale: true }]);
     expect(await q("SELECT 1 FROM reviews")).toHaveLength(3);
   });

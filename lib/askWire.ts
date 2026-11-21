@@ -28,6 +28,7 @@ const CoverageWire = z.object({
   textReviews: z.number(),
   currentTagged: z.number(),
   stale: z.number(),
+  flagged: z.number(),
   untagged: z.number(),
 });
 const ThemeMentionsWire = z.object({

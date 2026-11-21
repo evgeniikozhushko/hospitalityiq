@@ -12,7 +12,7 @@
  */
 import type { Client } from "pg";
 import { buildNotes } from "./answerNotes";
-import type { TagSource } from "./db/tags";
+import { resolveTagSet } from "./db/tagSets";
 import { sanitizePlan } from "./filters";
 import { themeMentions, themeRanking, themeTrend, type StatsScope } from "./reviewStats";
 import { resolveRoute, type FallbackCode, type StatsQuery, type ThemeInfo } from "./route";
@@ -42,11 +42,11 @@ export type StatsDb = Pick<Client, "query">;
 
 /** The fixed data scope for counts (decision 5). */
 export type StatsSettings = {
-  tagSource: TagSource;
-  taxonomyVersion: string;
+  /** Count from this tag set instead of the active one. Omitted in the app. */
+  tagSetId?: number | null;
   source: string;
-  /** Adds the "provisional tags" caveat while the theme list is provisional. */
-  provisional: boolean;
+  /** Whether a taxonomy version is still provisional (adds the "provisional tags" caveat). */
+  isProvisional(taxonomyVersion: string): boolean;
 };
 
 export type AnswerDeps = {
@@ -138,13 +138,8 @@ async function loadThemes(db: StatsDb): Promise<ThemeInfo[]> {
   return rows;
 }
 
-async function runStats(db: StatsDb, query: StatsQuery, s: StatsSettings): Promise<StatsOutcome> {
-  const scope: StatsScope = {
-    tagSource: s.tagSource,
-    taxonomyVersion: s.taxonomyVersion,
-    source: s.source,
-    filters: query.filters,
-  };
+async function runStats(db: StatsDb, query: StatsQuery, s: StatsSettings, tagSetId: number): Promise<StatsOutcome> {
+  const scope: StatsScope = { tagSetId, source: s.source, filters: query.filters };
   switch (query.kind) {
     case "mentions":
       return { kind: "mentions", query, result: await themeMentions(db, scope, query) };
@@ -176,8 +171,9 @@ async function tryStatistics(raw: PlannerOutput, deps: AnswerDeps): Promise<Stat
       return { kind: "fallback", note: decision.fallback?.note ?? null, code: decision.fallback?.code ?? null };
     }
 
-    const outcome = await runStats(db, decision.query, deps.stats);
-    const text = renderStats(outcome, { themes, provisional: deps.stats.provisional });
+    const tagSet = await resolveTagSet(db, deps.stats.tagSetId);
+    const outcome = await runStats(db, decision.query, deps.stats, tagSet.id);
+    const text = renderStats(outcome, { themes, provisional: deps.stats.isProvisional(tagSet.taxonomyVersion) });
     return { kind: "answered", events: [{ type: "stats", outcome }, { type: "delta", text }] };
   } catch (err) {
     const failure = statsFailure(err);

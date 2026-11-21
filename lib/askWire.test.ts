@@ -10,7 +10,7 @@ const plan: QueryPlan = {
   filters: { ...EMPTY_FILTERS, minRating: 1 },
 };
 
-const coverage = { totalReviews: 17, textReviews: 16, currentTagged: 15, stale: 0, untagged: 1 };
+const coverage = { totalReviews: 17, textReviews: 16, currentTagged: 15, stale: 0, flagged: 0, untagged: 1 };
 const mentions = {
   theme: "parking",
   sentiment: null,

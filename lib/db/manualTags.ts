@@ -7,6 +7,7 @@
 import { readFile } from "node:fs/promises";
 import type { Client } from "pg";
 import { z } from "zod";
+import { ensureTagSet } from "./tagSets";
 import { replaceTagSet, Sentiment, TagSetError } from "./tags";
 
 export const ManualTagsFileSchema = z.object({
@@ -38,12 +39,12 @@ export async function loadManualTags(
   if (missing.length > 0) {
     throw new TagSetError(`Tag file lists reviews not in the database: ${missing.join(", ")}`);
   }
+  const tagSetId = await ensureTagSet(client, { tagSource: "manual", taxonomyVersion: file.taxonomyVersion });
   for (const r of file.reviews) {
     await replaceTagSet(client, {
       source: file.source,
       sourceReviewId: r.sourceReviewId,
-      tagSource: "manual",
-      taxonomyVersion: file.taxonomyVersion,
+      tagSetId,
       tags: r.themes,
     });
   }

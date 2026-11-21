@@ -63,12 +63,12 @@ describe.skipIf(!url)("migrations (database)", () => {
 
   it("deletes a tag set's themes when its review_tagging row is removed", async () => {
     await admin.query(
-      `INSERT INTO review_tagging (review_id, tag_source, taxonomy_version)
-       SELECT id, 'manual', 'v1' FROM reviews WHERE source_review_id = 'r1'`,
+      `INSERT INTO review_tagging (review_id, tag_set_id)
+       SELECT r.id, a.tag_set_id FROM reviews r, active_tag_set a WHERE r.source_review_id = 'r1'`,
     );
     await admin.query(
-      `INSERT INTO review_themes (review_id, tag_source, taxonomy_version, theme_id, sentiment)
-       SELECT r.id, 'manual', 'v1', t.id, 'positive' FROM reviews r, themes t
+      `INSERT INTO review_themes (review_id, tag_set_id, theme_id, sentiment)
+       SELECT r.id, a.tag_set_id, t.id, 'positive' FROM reviews r, themes t, active_tag_set a
        WHERE r.source_review_id = 'r1' AND t.slug = 'rooms'`,
     );
     expect((await admin.query("SELECT 1 FROM current_review_themes")).rowCount).toBe(1);

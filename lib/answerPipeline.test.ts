@@ -39,7 +39,7 @@ function deps(plan: PlannerOutput, over: Partial<AnswerDeps> = {}) {
       yield "MODEL ANSWER";
     }),
     statsDb: vi.fn(() => null),
-    stats: { tagSource: "manual" as const, taxonomyVersion: "v1", source: "google_business_profile", provisional: true },
+    stats: { source: "google_business_profile", isProvisional: () => true },
     today: "2026-11-10",
     logError: vi.fn(),
     ...over,
