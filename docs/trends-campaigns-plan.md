@@ -59,11 +59,15 @@ These depend on no data, so they come first. A single sign-in gate is enough for
 - Every new prompt, model snapshot or taxonomy is a new tag set and goes through the gate again ([ADR 0003](adr/0003-a-tag-set-must-pass-the-gate-before-its-counts-are-shown.md)). The 100 labels stay the same, so re-checking is one run.
 - **Stale hand labels are left out of the gold labels.** A gate-sample review whose text was edited after it was hand-labelled is skipped, and the gate report says how many were skipped. It is re-labelled before it counts again.
 - **A passed set's gate-sample tags are locked.** The gate report stores the gate sample's review ids. Once a set has passed, the database refuses any change to those reviews' tags in that set, so the pass always describes the tags that are there. A gate-sample review whose text is later edited loses its model tags as usual (the review drops out of counts), and the set has to be gated again before that review's new tags count towards the pass.
+  - *Open, decide in step 4:* stale reviews are already left out of the gate comparison, so an edited gate-sample review's model tags could instead be deleted **without** a re-gate. Lay out both options then: re-gate on every such edit (the pass always matches the sample it was measured on), or allow the deletion and let the pass stand on the remaining sample (no re-gate churn, but the sample can shrink below the 15-per-theme minimum).
 
 ### 4. Code picks the quotes (Q9)
 
 - The tagger returns the **evidence sentence** for each tag. Code checks it is a word-for-word substring of the stored (sanitized) text, because that is what gets quoted. The database checks the substring too (migration 0003). A tag whose sentence fails the check is flagged under rule 2.
 - **Sentence boundaries.** A substring check alone accepts a fragment such as "parking". The tagger step also checks that the quote is a whole sentence: it starts at the beginning of the text or after sentence-ending punctuation, and ends at sentence-ending punctuation or the end of the text. A quote that fails is flagged, not trimmed or widened by code.
+  - Line breaks count as sentence boundaries too.
+  - Watch for "...", abbreviations ("approx.", "St.", "a.m.") and reviews with no punctuation at all, which the rule must not flag wholesale.
+  - Before relying on it, run the rule on a sample of real reviews and report how many quotes it would flag.
 - This needs a new nullable column on the tag rows. Hand tags have no sentence.
 - "Most relevant" is a rule code can apply: matching sentiment first (negative for a complaints question), then most recent.
 - The sentence also speeds up the hand audit for the gate.
